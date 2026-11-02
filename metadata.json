@@ -1,0 +1,6 @@
+{
+  "name": "CUVIO",
+  "description": "Healthcare, Clearly Explained. An interactive full-suite prototype designed for Vande Bharatam 2026, comparing hospital treatment tariffs, predicting real-time queue wait-times, and facilitating instant simulated emergency ambulance dispatches.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

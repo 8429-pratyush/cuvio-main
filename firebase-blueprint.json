@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "Hospital": {
+      "title": "Hospital",
+      "description": "Hospital profile and billing structures for Cuvio app.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "location": { "type": "string" },
+        "distance": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviews": { "type": "number" },
+        "image": { "type": "string" },
+        "startsAt": { "type": "number" },
+        "qualityScore": { "type": "number" },
+        "emergencyAvailable": { "type": "boolean" },
+        "parkingAvailable": { "type": "boolean" },
+        "currentQueueWait": { "type": "number" },
+        "about": { "type": "string" },
+        "specialties": { "type": "array" },
+        "charges": { "type": "object" }
+      },
+      "required": ["id", "name", "location", "charges"]
+    },
+    "Doctor": {
+      "title": "Doctor",
+      "description": "Doctor profile and availability status.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hospitalId": { "type": "string" },
+        "name": { "type": "string" },
+        "specialty": { "type": "string" },
+        "experience": { "type": "string" },
+        "rating": { "type": "number" },
+        "image": { "type": "string" },
+        "fee": { "type": "number" },
+        "availability": { "type": "string" },
+        "nextSlot": { "type": "string" },
+        "queuePatientsAhead": { "type": "number" }
+      },
+      "required": ["id", "hospitalId", "name", "specialty", "availability"]
+    },
+    "BookingRequest": {
+      "title": "BookingRequest",
+      "description": "Clinical appointments or check-in tokens booked by patient.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hospitalId": { "type": "string" },
+        "hospitalName": { "type": "string" },
+        "doctorId": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "department": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "status": { "type": "string" },
+        "queueToken": { "type": "string" },
+        "queueStatus": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "patientName": { "type": "string" },
+        "patientPhone": { "type": "string" },
+        "rescheduleTime": { "type": "string" }
+      },
+      "required": ["id", "hospitalId", "doctorId", "date", "time", "status", "patientName"]
+    },
+    "AmbulanceBooking": {
+      "title": "AmbulanceBooking",
+      "description": "Emergency SOS dispatch records booked by patient.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientName": { "type": "string" },
+        "patientPhone": { "type": "string" },
+        "pickupLocation": { "type": "string" },
+        "destinationHospitalId": { "type": "string" },
+        "destinationHospitalName": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "driverName": { "type": "string" },
+        "driverPhone": { "type": "string" },
+        "driverEta": { "type": "number" },
+        "distance": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "patientName", "pickupLocation", "destinationHospitalId", "type", "status"]
+    },
+    "Prescription": {
+      "title": "Prescription",
+      "description": "Clinical prescription issued to patients.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientName": { "type": "string" },
+        "date": { "type": "string" },
+        "doctorName": { "type": "string" },
+        "hospitalName": { "type": "string" },
+        "diagnosis": { "type": "string" },
+        "medications": { "type": "array" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "patientName", "doctorName", "hospitalName", "diagnosis", "medications"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User account data for patients including emergency contacts, insurances, and reminders.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "insuranceProvider": { "type": "string" },
+        "sumInsuredRange": { "type": "string" },
+        "dob": { "type": "string" },
+        "medicalHistory": { "type": "string" },
+        "emergencyContactName": { "type": "string" },
+        "emergencyContactPhone": { "type": "string" },
+        "emergencyContactRelation": { "type": "string" },
+        "reminder24hEnabled": { "type": "boolean" },
+        "reminder1hEnabled": { "type": "boolean" },
+        "reminder15mEnabled": { "type": "boolean" },
+        "reminderInAppEnabled": { "type": "boolean" }
+      },
+      "required": ["name", "phone", "insuranceProvider", "sumInsuredRange"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Individual patient profile settings and digital medical credentials."
+    },
+    "/hospitals/{hospitalId}": {
+      "schema": "Hospital",
+      "description": "Global list of physical hospitals, locations, facilities, and dynamic charges."
+    },
+    "/doctors/{doctorId}": {
+      "schema": "Doctor",
+      "description": "Profiles, schedules, real-time wait-list cues, and check-in options for specialists."
+    },
+    "/bookings/{bookingId}": {
+      "schema": "BookingRequest",
+      "description": "Appointment queues, statuses, digital receipts, and real-time waiting list indicators."
+    },
+    "/ambulanceBookings/{bookingId}": {
+      "schema": "AmbulanceBooking",
+      "description": "Emergency vehicle trackers, real-time dispatch routes, and turn-by-turn navigation updates."
+    },
+    "/prescriptions/{prescriptionId}": {
+      "schema": "Prescription",
+      "description": "Digital prescriptions issued during consultations containing dosage details."
+    }
+  }
+}

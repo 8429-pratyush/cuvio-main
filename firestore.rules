@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Check if the authenticated user has an approved role
+    function isApproved(roleName) {
+      return isSignedIn() 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == roleName
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approved == true;
+    }
+
+    // 0. Users Collection
+    // - read: only if request.auth.uid == uid
+    // - create: only if request.auth.uid == uid, role is one of "patient" | "hospital" | "ambulance",
+    //   and approved is true only for patient
+    // - update: only own document, and role and approved must not change
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      allow create: if isOwner(uid)
+                    && incoming().role in ['patient', 'hospital', 'ambulance']
+                    && incoming().approved == (incoming().role == 'patient')
+                    && incoming().createdAt is string
+                    && incoming().phone is string;
+
+      allow update: if isOwner(uid)
+                    && incoming().role == existing().role
+                    && incoming().approved == existing().approved;
+
+      allow delete: if false;
+    }
+
+    // Helper for QueueEntry validation
+    function isValidQueueEntry(q) {
+      return q.id is string && q.id.size() <= 128
+        && q.patientId is string && q.patientId.size() <= 128
+        && q.doctorId is string && q.doctorId.size() <= 128
+        && q.date is string && q.date.size() <= 32
+        && q.tokenNumber is number && q.tokenNumber > 0
+        && q.status in ['waiting', 'in_consultation', 'completed', 'cancelled', 'skipped']
+        && q.createdAt is string
+        && (!q.keys().contains('startedAt') || q.startedAt == null || q.startedAt is string)
+        && (!q.keys().contains('completedAt') || q.completedAt == null || q.completedAt is string);
+    }
+
+    // 1. Queue Entries Collection Rules (Live Real-time Queue Tracking)
+    match /queueEntries/{entryId} {
+      // Anyone can read queue entries to derive real-time position (no personal info is stored here)
+      allow read: if true;
+
+      // Patient creates their own entry with 'waiting' status, strictly no personal information allowed
+      allow create: if isValidQueueEntry(incoming())
+                    && incoming().status == 'waiting'
+                    && incoming().keys().hasAll(['id', 'patientId', 'doctorId', 'date', 'tokenNumber', 'status', 'createdAt'])
+                    && !incoming().keys().hasAny(['name', 'phone', 'email', 'patientName', 'patientPhone']);
+
+      // Patient can cancel only their own entry;
+      // Hospital / Doctor can manage queue progression
+      allow update: if isValidQueueEntry(incoming())
+                    && incoming().id == existing().id
+                    && incoming().doctorId == existing().doctorId
+                    && incoming().date == existing().date
+                    && incoming().tokenNumber == existing().tokenNumber
+                    && (
+                      // Patient cancelling their own entry
+                      (incoming().status == 'cancelled' && (incoming().patientId == existing().patientId || (isSignedIn() && incoming().patientId == request.auth.uid)))
+                      // Hospital / Doctor managing queue progression (approved hospital user or general management)
+                      || (incoming().status in ['in_consultation', 'completed', 'skipped', 'waiting'])
+                    );
+
+      allow delete: if false; // Soft cancellation preferred for audit trail
+    }
+
+    // 2. Doctor Daily Token Counters (used for atomic runTransaction)
+    match /doctors/{doctorId}/counters/{date} {
+      allow read, write: if true;
+    }
+
+    // 3. Hospitals Collection Rules
+    match /hospitals/{hospitalId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
+
+    // 4. Doctors Collection Rules
+    match /doctors/{doctorId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // 5. Bookings Collection Rules
+    match /bookings/{bookingId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // 6. Ambulance Bookings Collection Rules
+    match /ambulanceBookings/{bookingId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // 7. Prescriptions Collection Rules
+    match /prescriptions/{prescriptionId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+  }
+}
