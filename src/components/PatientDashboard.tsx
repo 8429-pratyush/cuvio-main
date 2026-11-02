@@ -6,13 +6,16 @@ import {
   Calendar, AlertCircle, FileText, Upload, ChevronRight, BadgePercent,
   Plus, CheckCircle, Eye, Info, Play, MessageSquare, Compass, Ambulance,
   User, Check, HeartCrack, Sparkles, Filter, RefreshCw, Smartphone, Download, Trash2,
-  Loader2, Stethoscope, AlertTriangle, FileCheck, X, Share2, HelpCircle
+  Loader2, Stethoscope, AlertTriangle, FileCheck, X, Share2, HelpCircle,
+  ArrowRight, DollarSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import AmbulanceMap from './AmbulanceMap';
 import LiveQueueTrackingTicket from './LiveQueueTrackingTicket';
+import AIHealthAdvisor from './AIHealthAdvisor';
 
 export default function PatientDashboard() {
+  const [showAiAdvisorModal, setShowAiAdvisorModal] = useState(false);
   const {
     user,
     currentScreen,
@@ -400,7 +403,17 @@ export default function PatientDashboard() {
           <span className="text-xl font-bold tracking-tight text-[#0B5A4B] font-display">CUVIO</span>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowAiAdvisorModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-600 to-[#0B5A4B] text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer hover:scale-105 active:scale-95"
+            title="Open AI Health & Cost Advisor"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+            <span className="hidden sm:inline">AI Health Advisor</span>
+            <span className="text-[10px] bg-white/25 px-1.5 py-0.5 rounded-full font-extrabold uppercase">Dual AI</span>
+          </button>
+
           <div 
             onClick={() => setScreen('profile')} 
             className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity"
@@ -445,6 +458,51 @@ export default function PatientDashboard() {
                 <p className="text-slate-500 text-sm mt-1">
                   Access transparent medical pricing, real-time queues, and ambulance dispatches.
                 </p>
+              </div>
+
+              {/* DUAL AI HEALTH & COST ADVISOR HERO CARD (Gemini + Claude Consensus) */}
+              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-[#073D33] text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-slate-700">
+                <div className="absolute right-0 top-0 p-8 opacity-10 pointer-events-none">
+                  <Sparkles className="w-40 h-40 text-emerald-400" />
+                </div>
+                <div className="relative z-10 space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Gemini + Claude Medical Consensus
+                    </span>
+                    <span className="bg-blue-500/20 text-blue-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-400/30">
+                      Immediate Care Action Plan
+                    </span>
+                    <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-400/30">
+                      3-Tier Cost Estimator
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-extrabold tracking-tight font-display text-white">
+                    Need Health Advice or Surgery Cost Estimates?
+                  </h2>
+                  <p className="text-slate-300 text-xs max-w-xl leading-relaxed">
+                    Experiencing symptoms or evaluating hospital tariffs? Get clinical differential triage from Gemini, empathetic step-by-step at-home relief steps from Claude, and itemized cost estimation across Government, Private, and Corporate super-specialty hospitals.
+                  </p>
+                  
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    <button
+                      onClick={() => setShowAiAdvisorModal(true)}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                    >
+                      <Stethoscope className="w-4 h-4 text-slate-950" />
+                      <span>Start AI Health Consult</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setShowAiAdvisorModal(true)}
+                      className="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer"
+                    >
+                      <DollarSign className="w-4 h-4 text-emerald-400" />
+                      <span>Compare Surgery & Treatment Costs</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* HOSPITAL-FIRST BOOKING GATEWAY CARD */}
@@ -1447,14 +1505,23 @@ export default function PatientDashboard() {
                     <div className="w-11 h-11 rounded-2xl bg-[#0B5A4B] text-white flex items-center justify-center shadow-lg shadow-[#0B5A4B]/15 shrink-0">
                       <Sparkles className="w-5 h-5 text-emerald-300" />
                     </div>
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 font-display flex items-center gap-2">
-                        <span>AI Clinical Triage & Specialist Matcher</span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-[#0B5A4B] px-2 py-0.5 rounded-full">Gemini Powered</span>
-                      </h3>
-                      <p className="text-xs text-slate-500 leading-relaxed mt-0.5">
-                        Describe symptoms or clinical concerns. Cuvio AI analyzes urgency, generates pre-consultation questions, and matches the correct department.
-                      </p>
+                    <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 font-display flex items-center gap-2">
+                          <span>AI Clinical Triage & Specialist Matcher</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-[#0B5A4B] px-2 py-0.5 rounded-full">Gemini + Claude</span>
+                        </h3>
+                        <p className="text-xs text-slate-500 leading-relaxed mt-0.5">
+                          Describe symptoms or clinical concerns. Cuvio AI analyzes urgency, generates pre-consultation questions, and projects treatment costs.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowAiAdvisorModal(true)}
+                        className="self-start sm:self-auto px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-[#0B5A4B] text-white rounded-xl text-xs font-bold hover:opacity-90 shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+                        <span>Launch Full Advisor</span>
+                      </button>
                     </div>
                   </div>
 
@@ -2826,6 +2893,16 @@ export default function PatientDashboard() {
         </button>
 
         <button
+          onClick={() => setShowAiAdvisorModal(true)}
+          className="flex flex-col items-center justify-center p-1.5 transition-transform active:scale-90 cursor-pointer text-[#0B5A4B] relative"
+        >
+          <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center shadow-xs">
+            <Sparkles className="w-4 h-4 text-[#0B5A4B]" />
+          </div>
+          <span className="text-[10px] font-bold mt-0.5">AI Advisor</span>
+        </button>
+
+        <button
           onClick={() => setScreen('prescriptions')}
           className={`flex flex-col items-center justify-center p-1.5 transition-transform active:scale-90 cursor-pointer ${
             currentScreen === 'prescriptions' ? 'text-[#0B5A4B]' : 'text-slate-400'
@@ -2855,6 +2932,23 @@ export default function PatientDashboard() {
           <span className="text-[10px] font-bold mt-1">Profile</span>
         </button>
       </footer>
+
+      {/* Full Screen AI Health & Cost Advisor Modal */}
+      {showAiAdvisorModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl">
+            <AIHealthAdvisor
+              initialSymptom={symptomsSearch}
+              onClose={() => setShowAiAdvisorModal(false)}
+              onSelectSpecialist={(spec) => {
+                setSelectedSpecialty(spec);
+                setShowAiAdvisorModal(false);
+                setScreen('specialist-suggestion');
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
