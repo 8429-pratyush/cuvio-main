@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import AmbulanceMap from './AmbulanceMap';
 import LiveQueueTrackingTicket from './LiveQueueTrackingTicket';
 import AIHealthAdvisor from './AIHealthAdvisor';
+import Medical3DVitalModel from './Medical3DVitalModel';
 
 export default function PatientDashboard() {
   const [showAiAdvisorModal, setShowAiAdvisorModal] = useState(false);
@@ -460,7 +461,7 @@ export default function PatientDashboard() {
                 </p>
               </div>
 
-              {/* DUAL AI HEALTH & COST ADVISOR HERO CARD (Gemini + Claude Consensus) */}
+              {/* CUVIO CLINICAL AI HEALTH & OPD QUEUE ADVISOR HERO CARD */}
               <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-[#073D33] text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-slate-700">
                 <div className="absolute right-0 top-0 p-8 opacity-10 pointer-events-none">
                   <Sparkles className="w-40 h-40 text-emerald-400" />
@@ -469,20 +470,20 @@ export default function PatientDashboard() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase">
                       <Sparkles className="w-3.5 h-3.5" />
-                      Gemini + Claude Medical Consensus
+                      Autonomous Clinical AI
                     </span>
                     <span className="bg-blue-500/20 text-blue-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-400/30">
                       Immediate Care Action Plan
                     </span>
                     <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-400/30">
-                      3-Tier Cost Estimator
+                      Live OPD Queue Token
                     </span>
                   </div>
                   <h2 className="text-2xl font-extrabold tracking-tight font-display text-white">
                     Need Health Advice or Surgery Cost Estimates?
                   </h2>
                   <p className="text-slate-300 text-xs max-w-xl leading-relaxed">
-                    Experiencing symptoms or evaluating hospital tariffs? Get clinical differential triage from Gemini, empathetic step-by-step at-home relief steps from Claude, and itemized cost estimation across Government, Private, and Corporate super-specialty hospitals.
+                    Experiencing symptoms or evaluating hospital tariffs? Get instant clinical triage, step-by-step at-home relief guidance, automatic OPD queue token allocation, and itemized cost estimation across Government, Private, and Corporate super-specialty hospitals.
                   </p>
                   
                   <div className="flex flex-wrap gap-3 pt-2">
@@ -503,6 +504,16 @@ export default function PatientDashboard() {
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* 3D BIOMETRIC EXPLORER & ANATOMICAL ORGAN SCANNER */}
+              <div className="space-y-2">
+                <Medical3DVitalModel
+                  onSelectRegion={(reg, sym) => {
+                    setSymptomsSearch(sym);
+                    setShowAiAdvisorModal(true);
+                  }}
+                />
               </div>
 
               {/* HOSPITAL-FIRST BOOKING GATEWAY CARD */}
@@ -1509,7 +1520,7 @@ export default function PatientDashboard() {
                       <div>
                         <h3 className="text-base font-bold text-slate-900 font-display flex items-center gap-2">
                           <span>AI Clinical Triage & Specialist Matcher</span>
-                          <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-[#0B5A4B] px-2 py-0.5 rounded-full">Gemini + Claude</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-[#0B5A4B] px-2 py-0.5 rounded-full">Autonomous Clinical AI</span>
                         </h3>
                         <p className="text-xs text-slate-500 leading-relaxed mt-0.5">
                           Describe symptoms or clinical concerns. Cuvio AI analyzes urgency, generates pre-consultation questions, and projects treatment costs.
@@ -2581,12 +2592,18 @@ export default function PatientDashboard() {
                   </p>
                 </div>
                 
-                <button
-                  onClick={() => setScreen('dashboard')}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                >
-                  Back to Home
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#0B5A4B] text-[11px] font-bold shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Firestore Backend Sync: Active</span>
+                  </div>
+                  <button
+                    onClick={() => setScreen('dashboard')}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Back to Home
+                  </button>
+                </div>
               </div>
 
               {/* Alert sandbox banner */}
@@ -2615,9 +2632,9 @@ export default function PatientDashboard() {
 
               {/* Toast notifier */}
               {saveSuccess && (
-                <div className="bg-[#0B5A4B] text-white p-4 rounded-2xl flex items-center gap-2 shadow-lg transition-all">
-                  <CheckCircle className="w-5 h-5" />
-                  <span className="text-xs font-bold">Profile and Reminder preferences synchronized securely with local medical storage!</span>
+                <div className="bg-gradient-to-r from-[#0B5A4B] to-emerald-700 text-white p-4 rounded-2xl flex items-center gap-2.5 shadow-xl transition-all border border-emerald-500/30">
+                  <CheckCircle className="w-5 h-5 text-emerald-300" />
+                  <span className="text-xs font-bold">Profile, clinical history, and reminder settings synchronized permanently to Firestore Cloud Database!</span>
                 </div>
               )}
 

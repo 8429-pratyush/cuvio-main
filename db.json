@@ -1,0 +1,31 @@
+{
+  "users": [
+    {
+      "name": "Rahul Verma",
+      "phone": "9876543210",
+      "age": 28,
+      "gender": "Male",
+      "medicalHistory": "No known drug allergies",
+      "insuranceProvider": "Niva Bupa",
+      "uid": "pat_9876543210",
+      "role": "patient",
+      "approved": true,
+      "updatedAt": "2026-11-02T10:33:36.452Z"
+    }
+  ],
+  "consultations": [
+    {
+      "id": "cons_1793615626889_949",
+      "patientId": "pat_9876543210",
+      "patientName": "Rahul Verma",
+      "symptoms": "Knee stiffness",
+      "assessment": {
+        "geminiAnalysis": {
+          "primaryCondition": "Knee Osteoarthritis",
+          "urgency": "Routine OPD"
+        }
+      },
+      "createdAt": "2026-11-02T10:33:46.889Z"
+    }
+  ]
+}

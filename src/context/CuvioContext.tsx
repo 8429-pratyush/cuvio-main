@@ -98,6 +98,8 @@ interface CuvioContextType {
   // Doctor management
   addDoctor: (docData: Omit<Doctor, 'id' | 'rating' | 'availability' | 'queuePatientsAhead'>) => void;
   removeDoctor: (doctorId: string) => void;
+  saveConsultation: (symptoms: string, assessment: any) => Promise<any>;
+  fetchPatientConsultations: () => Promise<any[]>;
   isOfflineMode: boolean;
 }
 
@@ -665,7 +667,10 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const login = (name: string, phone: string, insuranceProvider?: string, sumInsuredRange?: string) => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const docId = auth.currentUser?.uid || (cleanPhone ? `pat_${cleanPhone}` : `pat_${Date.now()}`);
     const newUser: User = { 
+      uid: docId,
       role: 'patient', 
       approved: true, 
       createdAt: new Date().toISOString(), 
@@ -679,11 +684,24 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setUser(newUser);
     localStorage.setItem('cuvio_user', JSON.stringify(newUser));
     setScreenState('dashboard');
+
+    // Persist to backend Firestore API
+    fetch('/api/patient/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newUser)
+    }).catch(e => console.warn('Sync patient login to Firestore backend error:', e));
+
+    if (auth.currentUser?.uid) {
+      setDoc(doc(db, 'users', auth.currentUser.uid), newUser, { merge: true }).catch(() => {});
+    }
   };
 
   const signUp = async (name: string, phone: string, insuranceProvider?: string, sumInsuredRange?: string) => {
-    const currentUid = auth.currentUser?.uid;
+    const cleanPhone = phone.replace(/\D/g, '');
+    const docId = auth.currentUser?.uid || (cleanPhone ? `pat_${cleanPhone}` : `pat_${Date.now()}`);
     const newPatient: User = {
+      uid: docId,
       role: 'patient',
       approved: true,
       createdAt: new Date().toISOString(),
@@ -695,9 +713,16 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       sumInsuredRange: sumInsuredRange || '₹5,00,000 - ₹10,00,000'
     };
 
-    if (currentUid) {
-      await setDoc(doc(db, 'users', currentUid), newPatient);
+    if (auth.currentUser?.uid) {
+      await setDoc(doc(db, 'users', auth.currentUser.uid), newPatient).catch(e => console.warn('setDoc user error:', e));
     }
+    // Always persist to Firestore backend
+    await fetch('/api/patient/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newPatient)
+    }).catch(e => console.warn('Sync patient signup to Firestore error:', e));
+
     setUser(newPatient);
     localStorage.setItem('cuvio_user', JSON.stringify(newPatient));
     setScreenState('dashboard');
@@ -706,15 +731,35 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const loginWithPhone = async (phone: string): Promise<User> => {
     const currentUid = auth.currentUser?.uid;
     if (currentUid) {
-      const snap = await getDoc(doc(db, 'users', currentUid));
-      if (snap.exists()) {
-        const u = snap.data() as User;
-        setUser(u);
-        localStorage.setItem('cuvio_user', JSON.stringify(u));
-        setScreenState('dashboard');
-        return u;
-      }
+      try {
+        const snap = await getDoc(doc(db, 'users', currentUid));
+        if (snap.exists()) {
+          const u = snap.data() as User;
+          setUser(u);
+          localStorage.setItem('cuvio_user', JSON.stringify(u));
+          setScreenState('dashboard');
+          return u;
+        }
+      } catch (e) {}
     }
+
+    // Query backend Firestore API by phone to restore full profile
+    try {
+      const res = await fetch(`/api/patient/profile/${encodeURIComponent(phone)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          const u = data.user as User;
+          setUser(u);
+          localStorage.setItem('cuvio_user', JSON.stringify(u));
+          setScreenState('dashboard');
+          return u;
+        }
+      }
+    } catch (e) {
+      console.warn("Error fetching patient profile from Firestore backend:", e);
+    }
+
     if (user) {
       setScreenState('dashboard');
       return user;
@@ -964,16 +1009,55 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (currentUid) {
         setDoc(doc(db, 'users', currentUid), updatedData, { merge: true })
           .catch(err => {
-            console.warn("Offline/unreachable updating user:", err);
-            setIsOfflineMode(true);
-            if (err && (err.code === 'permission-denied' || err.message?.includes('permission'))) {
-              handleFirestoreError(err, OperationType.UPDATE, `users/${currentUid}`);
-            }
+            console.warn("Offline/unreachable updating user in client Firestore:", err);
           });
       }
 
+      // Always persist patient profile to Firestore backend API
+      fetch('/api/patient/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextUser)
+      }).catch(e => console.warn('Backend sync profile error:', e));
+
       return nextUser;
     });
+  };
+
+  const saveConsultation = async (symptoms: string, assessment: any) => {
+    const patientId = auth.currentUser?.uid || (user as any)?.uid || (user?.phone ? user.phone.replace(/\D/g, '') : 'guest');
+    const patientName = user?.name || 'Patient';
+    try {
+      const res = await fetch('/api/patient/consultation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId,
+          patientName,
+          symptoms,
+          assessment,
+          timestamp: new Date().toISOString()
+        })
+      });
+      return await res.json();
+    } catch (e) {
+      console.warn("Failed to persist consultation to Firestore:", e);
+      return null;
+    }
+  };
+
+  const fetchPatientConsultations = async (): Promise<any[]> => {
+    const patientId = auth.currentUser?.uid || (user as any)?.uid || (user?.phone ? user.phone.replace(/\D/g, '') : 'guest');
+    try {
+      const res = await fetch(`/api/patient/consultations/${encodeURIComponent(patientId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.consultations || [];
+      }
+    } catch (e) {
+      console.warn("Failed to fetch patient consultations from Firestore:", e);
+    }
+    return [];
   };
 
   const selectHospital = (id: string | null) => {
@@ -1707,6 +1791,8 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       issuePrescription,
       addDoctor,
       removeDoctor,
+      saveConsultation,
+      fetchPatientConsultations,
       isOfflineMode
     }}>
       {children}

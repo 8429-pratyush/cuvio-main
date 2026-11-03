@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, collection, getDocs, doc, setDoc, writeBatch } from "firebase/firestore";
+import { getFirestore, collection, getDocs, doc, setDoc, getDoc, query, where, writeBatch } from "firebase/firestore";
 
 import appletConfig from "./firebase-applet-config.json";
 
@@ -142,6 +142,171 @@ async function startServer() {
     }
   });
 
+  // API Route: Save or Update Patient Profile permanently in Firestore
+  app.post("/api/patient/profile", async (req, res) => {
+    try {
+      const patientData = req.body;
+      if (!patientData) {
+        return res.status(400).json({ error: "Patient data required" });
+      }
+
+      // Determine document ID: uid, or clean phone, or generated
+      const cleanPhone = (patientData.phone || "").replace(/\D/g, "");
+      const docId = patientData.uid || (cleanPhone ? `pat_${cleanPhone}` : `pat_${Date.now()}`);
+
+      const record = {
+        ...patientData,
+        uid: docId,
+        role: "patient",
+        approved: true,
+        updatedAt: new Date().toISOString()
+      };
+
+      // 1. Try saving to Firestore
+      try {
+        const userDocRef = doc(db, "users", docId);
+        await setDoc(userDocRef, record, { merge: true });
+
+        // If cleanPhone is distinct, also save reference by phone for instant search
+        if (cleanPhone && docId !== `pat_${cleanPhone}`) {
+          await setDoc(doc(db, "users", `pat_${cleanPhone}`), record, { merge: true }).catch(() => {});
+        }
+      } catch (firestoreErr: any) {
+        console.warn("Firestore remote write skipped or denied, persisting to local database:", firestoreErr?.message || firestoreErr);
+      }
+
+      // 2. Persist in local database backup so it is permanently saved and queryable
+      try {
+        const local = readLocalBackup() || {};
+        if (!local.users) local.users = [];
+        const existingIdx = local.users.findIndex((u: any) => u.uid === docId || (cleanPhone && u.phone?.replace(/\D/g, "") === cleanPhone));
+        if (existingIdx >= 0) {
+          local.users[existingIdx] = { ...local.users[existingIdx], ...record };
+        } else {
+          local.users.push(record);
+        }
+        fs.writeFileSync(DB_PATH, JSON.stringify(local, null, 2));
+      } catch (e) {
+        console.warn("Could not sync patient to local backup:", e);
+      }
+
+      console.log(`Saved patient profile for ${record.name || docId} (${docId})`);
+      res.json({ status: "success", user: record });
+    } catch (err: any) {
+      console.error("Error saving patient profile:", err);
+      res.status(500).json({ error: "Failed to save patient profile", details: err.message });
+    }
+  });
+
+  // API Route: Fetch Patient Profile by ID or Phone
+  app.get("/api/patient/profile/:idOrPhone", async (req, res) => {
+    try {
+      const { idOrPhone } = req.params;
+      const cleanParam = idOrPhone.trim();
+      const cleanPhone = cleanParam.replace(/\D/g, "");
+
+      // 1. Try direct Firestore getDoc
+      let userDoc = await getDoc(doc(db, "users", cleanParam)).catch(() => null);
+      if (!userDoc?.exists() && cleanPhone) {
+        userDoc = await getDoc(doc(db, "users", `pat_${cleanPhone}`)).catch(() => null);
+      }
+
+      if (userDoc?.exists()) {
+        return res.json({ status: "success", user: userDoc.data() });
+      }
+
+      // 2. Try querying Firestore users collection by phone or email
+      if (cleanPhone) {
+        const q = query(collection(db, "users"), where("phone", "==", cleanParam));
+        const snap = await getDocs(q).catch(() => null);
+        if (snap && !snap.empty) {
+          return res.json({ status: "success", user: snap.docs[0].data() });
+        }
+      }
+
+      // 3. Check local backup
+      const local = readLocalBackup();
+      if (local && Array.isArray(local.users)) {
+        const found = local.users.find((u: any) => 
+          u.uid === cleanParam || 
+          (cleanPhone && u.phone?.replace(/\D/g, "") === cleanPhone) ||
+          u.email === cleanParam
+        );
+        if (found) {
+          return res.json({ status: "success", user: found });
+        }
+      }
+
+      res.status(404).json({ error: "Patient profile not found" });
+    } catch (err: any) {
+      console.error("Error getting patient profile:", err);
+      res.status(500).json({ error: "Failed to fetch patient profile", details: err.message });
+    }
+  });
+
+  // API Route: Save Patient AI Consultation History
+  app.post("/api/patient/consultation", async (req, res) => {
+    try {
+      const { patientId, patientName, symptoms, assessment, timestamp } = req.body;
+      const consultId = `cons_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      const docData = {
+        id: consultId,
+        patientId: patientId || "anonymous",
+        patientName: patientName || "Patient",
+        symptoms: symptoms || "",
+        assessment: assessment || {},
+        createdAt: timestamp || new Date().toISOString()
+      };
+
+      try {
+        const consultRef = doc(db, "consultations", consultId);
+        await setDoc(consultRef, docData);
+      } catch (firestoreErr) {
+        console.warn("Firestore remote write skipped or denied for consultation, saving locally:", firestoreErr);
+      }
+
+      // Backup locally
+      try {
+        const local = readLocalBackup() || {};
+        if (!local.consultations) local.consultations = [];
+        local.consultations.unshift(docData);
+        fs.writeFileSync(DB_PATH, JSON.stringify(local, null, 2));
+      } catch (e) {}
+
+      res.json({ status: "success", consultation: docData });
+    } catch (err: any) {
+      console.error("Error saving consultation:", err);
+      res.status(500).json({ error: "Failed to save consultation", details: err.message });
+    }
+  });
+
+  // API Route: Get Patient Consultation History
+  app.get("/api/patient/consultations/:patientId", async (req, res) => {
+    try {
+      const { patientId } = req.params;
+      const q = query(collection(db, "consultations"), where("patientId", "==", patientId));
+      const snap = await getDocs(q).catch(() => null);
+
+      if (snap && !snap.empty) {
+        const list = snap.docs.map(d => d.data());
+        list.sort((a: any, b: any) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        return res.json({ status: "success", consultations: list });
+      }
+
+      // Check local
+      const local = readLocalBackup();
+      if (local && Array.isArray(local.consultations)) {
+        const userConsults = local.consultations.filter((c: any) => c.patientId === patientId);
+        return res.json({ status: "success", consultations: userConsults });
+      }
+
+      res.json({ status: "success", consultations: [] });
+    } catch (err: any) {
+      console.error("Error getting consultations:", err);
+      res.status(500).json({ error: "Failed to fetch consultations", details: err.message });
+    }
+  });
+
   // Gemini AI Generation Engine
   const ai = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY,
@@ -152,18 +317,24 @@ async function startServer() {
     }
   });
 
-  // Helper for Gemini generateContent with fallback
+  // Helper for Gemini generateContent with fast timeout and fallback
   const callGemini = async (prompt: string, systemInstruction?: string) => {
-    const modelsToTry = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+    const modelsToTry = ['gemini-3.8-flash'];
     for (const model of modelsToTry) {
       try {
-        const response = await ai.models.generateContent({
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+        const callPromise = ai.models.generateContent({
           model,
           contents: prompt,
           config: systemInstruction ? { systemInstruction } : undefined,
+        }).then(res => res?.text || null).catch(err => {
+          console.warn(`Model ${model} call error:`, err?.message || err);
+          return null;
         });
-        if (response && response.text) {
-          return response.text;
+
+        const result = await Promise.race([callPromise, timeoutPromise]);
+        if (result) {
+          return result;
         }
       } catch (err: any) {
         console.warn(`Model ${model} call failed:`, err?.message || err);
@@ -467,6 +638,23 @@ Return ONLY valid JSON. No markdown backticks, no markdown fence.`;
               ]
             }
           }
+        };
+      }
+
+      if (parsed) {
+        const dep = parsed.geminiAnalysis?.recommendedSpecialist || "General Medicine";
+        const urgencyColor = parsed.geminiAnalysis?.urgencyBadgeColor || "emerald";
+        const isEmerg = urgencyColor === "red";
+        const isUrgent = urgencyColor === "amber";
+
+        parsed.aiQueueToken = {
+          tokenCode: `TK-${dep.slice(0, 3).toUpperCase()}-${Math.floor(Math.random() * 600) + 100}`,
+          department: dep,
+          priorityTier: isEmerg ? "STAT Emergency (Zero Wait)" : isUrgent ? "Priority Triage" : "Standard OPD",
+          queuePosition: isEmerg ? 1 : isUrgent ? 2 : 4,
+          estimatedWaitMinutes: isEmerg ? 2 : isUrgent ? 10 : 20,
+          status: "Issued & Ready",
+          generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
       }
 
