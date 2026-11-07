@@ -3,7 +3,7 @@ import { useCuvio } from '../context/CuvioContext';
 import { BookingRequest, Doctor, AmbulanceBooking } from '../types';
 import {
   Calendar, CheckCircle, Clock, AlertTriangle, XCircle, RefreshCw,
-  User, Check, X, ShieldAlert, Award, Power, Sparkles, LogOut, ArrowRight, Ambulance, Bell, Plus, Trash2
+  User, Check, X, ShieldAlert, Award, Power, Sparkles, LogOut, ArrowRight, Ambulance, Bell, Plus, Trash2, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import AmbulanceMap from './AmbulanceMap';
@@ -29,7 +29,10 @@ export default function AdminPanel() {
     setAdminHospitalId,
     addDoctor,
     removeDoctor,
-    requestAmbulance
+    requestAmbulance,
+    messages,
+    sendMessage,
+    setPortal
   } = useCuvio();
 
   // Find logged-in hospital admin context
@@ -44,6 +47,8 @@ export default function AdminPanel() {
   const [rescheduleBookingId, setRescheduleBookingId] = useState<string | null>(null);
   const [rescheduleTime, setRescheduleTime] = useState('02:00 PM');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
 
   // Hospital Rates States
   const [editHospitalId, setEditHospitalId] = useState('');
@@ -188,6 +193,8 @@ export default function AdminPanel() {
   const pendingCount = bookings.filter(b => b.status === 'Pending').length;
   const activeQueueCount = bookings.filter(b => b.status === 'Confirmed').length;
   const activeEmergencies = ambulanceBookings.filter(b => b.status === 'Requested' || b.status === 'Dispatched').length;
+  const clinicMessages = activeHosp ? messages.filter(m => m.clinicId === activeHosp.id) : [];
+  const patientMessagesCount = clinicMessages.filter(m => m.from === 'patient').length;
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans pb-32">
@@ -283,6 +290,20 @@ export default function AdminPanel() {
             <span>Emergency Alerts</span>
             {activeEmergencies > 0 && (
               <span className="absolute top-1.5 right-1.5 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-ping" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setAdminTab('messages')}
+            className={`flex-1 py-3 text-center rounded-xl text-xs font-bold font-display transition-all cursor-pointer relative ${
+              adminTab === 'messages' ? 'bg-[#0B5A4B] text-white shadow' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>Patient Messages</span>
+            {patientMessagesCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                {patientMessagesCount}
+              </span>
             )}
           </button>
 
@@ -1381,6 +1402,102 @@ export default function AdminPanel() {
             </motion.div>
           )}
 
+          {/* TAB 6: PATIENT MESSAGES DESK */}
+          {adminTab === 'messages' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-white font-display flex items-center gap-2">
+                    <span>Patient Front Desk Messages</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  </h2>
+                  <p className="text-xs text-slate-400">Direct real-time inquiries from patients connected to {displayHospitalName}</p>
+                </div>
+                <div className="text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-3 py-1.5 rounded-full">
+                  Live Firestore Channel
+                </div>
+              </div>
+
+              {/* Messages Container */}
+              <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+                <div className="max-h-[420px] min-h-[200px] overflow-y-auto space-y-3 p-4 bg-slate-900/80 rounded-2xl border border-slate-800/80">
+                  {clinicMessages.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500">
+                      <MessageSquare className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+                      <p className="text-sm font-bold text-slate-400">No Patient Messages Yet</p>
+                      <p className="text-xs mt-1 text-slate-500">When patients ask questions via the Patient Portal, their messages will arrive here immediately.</p>
+                    </div>
+                  ) : (
+                    clinicMessages
+                      .sort((a, b) => (a.createdAt || a.timestamp || 0) - (b.createdAt || b.timestamp || 0))
+                      .map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${msg.from === 'hospital' ? 'items-end' : 'items-start'}`}
+                        >
+                          <div
+                            className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
+                              msg.from === 'hospital'
+                                ? 'bg-gradient-to-r from-[#6C8CFF] to-[#3552C8] text-white rounded-br-none shadow-md'
+                                : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-bl-none shadow'
+                            }`}
+                          >
+                            <div className="text-[10px] font-bold opacity-80 mb-0.5 flex items-center gap-1.5">
+                              {msg.from === 'hospital' ? 'You (Hospital Desk)' : 'Patient Inquirer'}
+                            </div>
+                            <div className="text-xs font-medium">{msg.text}</div>
+                          </div>
+                          <span className="text-[9px] text-slate-500 mt-1 px-1">
+                            {new Date(msg.createdAt || msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))
+                  )}
+                </div>
+
+                {/* Reply Bar */}
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!replyText.trim() || isSendingReply || !activeHosp) return;
+                    setIsSendingReply(true);
+                    try {
+                      await sendMessage(activeHosp.id, activeHosp.name, replyText.trim(), 'hospital');
+                      setReplyText('');
+                      setToastMessage("Reply dispatched to patient!");
+                      setTimeout(() => setToastMessage(null), 3000);
+                    } catch (err) {
+                      console.error("Failed to reply:", err);
+                    } finally {
+                      setIsSendingReply(false);
+                    }
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    type="text"
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    placeholder="Type reply to patient..."
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#6C8CFF]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSendingReply || !replyText.trim()}
+                    className="px-6 py-3 bg-gradient-to-r from-[#6C8CFF] to-[#3552C8] hover:brightness-110 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 cursor-pointer shadow-lg"
+                  >
+                    {isSendingReply ? 'Sending...' : 'Reply'}
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
@@ -1407,13 +1524,13 @@ export default function AdminPanel() {
         </button>
 
         <button
-          onClick={() => setAdminTab('doctors')}
+          onClick={() => setAdminTab('messages')}
           className={`flex flex-col items-center justify-center p-1.5 cursor-pointer ${
-            adminTab === 'doctors' ? 'text-blue-500' : 'text-slate-500'
+            adminTab === 'messages' ? 'text-emerald-400' : 'text-slate-500'
           }`}
         >
-          <Power className="w-5 h-5" />
-          <span className="text-[10px] font-bold mt-1">Doctors</span>
+          <MessageSquare className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Messages</span>
         </button>
 
         <button

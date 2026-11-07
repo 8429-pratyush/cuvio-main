@@ -182,3 +182,23 @@ export interface Driver {
   hospitalName: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  clinicId: string;
+  clinicName?: string;
+  uid: string;
+  name: string;
+  from: 'patient' | 'hospital';
+  text: string;
+  createdAt: number;
+  timestamp?: number;
+}
+
+export interface ProcedurePricing {
+  id: string;
+  hospitalId: string;
+  name: string;
+  min: number;
+  max: number;
+}
+

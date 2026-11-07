@@ -34,21 +34,23 @@ service cloud.firestore {
 
     // 0. Users Collection
     // - read: only if request.auth.uid == uid
-    // - create: only if request.auth.uid == uid, role is one of "patient" | "hospital" | "ambulance",
-    //   and approved is true only for patient
-    // - update: only own document, and role and approved must not change
+    // - create: only if request.auth.uid == uid, role is patient or hospital_admin, approved is bool, phone is string
+    //   Never allow role: 'driver'
+    // - update: only own document, role, hospitalId, and approved must not change
     match /users/{uid} {
       allow read: if isOwner(uid);
 
       allow create: if isOwner(uid)
-                    && incoming().role in ['patient', 'hospital', 'ambulance']
-                    && incoming().approved == (incoming().role == 'patient')
+                    && incoming().role in ['patient', 'hospital', 'hospital_admin', 'ambulance']
+                    && incoming().role != 'driver'
+                    && incoming().approved is bool
                     && incoming().createdAt is string
                     && incoming().phone is string;
 
       allow update: if isOwner(uid)
                     && incoming().role == existing().role
-                    && incoming().approved == existing().approved;
+                    && incoming().approved == existing().approved
+                    && (!existing().keys().contains('hospitalId') || incoming().hospitalId == existing().hospitalId);
 
       allow delete: if false;
     }
@@ -128,6 +130,16 @@ service cloud.firestore {
     match /prescriptions/{prescriptionId} {
       allow read: if true;
       allow create, update, delete: if true;
+    }
+
+    // 8. Messages Collection Rules (Real-time Patient-Hospital communication)
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // 9. Procedure Requests Collection Rules
+    match /procreq/{reqId} {
+      allow read, write: if true;
     }
   }
 }

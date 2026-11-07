@@ -91,7 +91,7 @@ export default function Medical3DVitalModel({
 
   const [activeRegion, setActiveRegion] = useState<AnatomicalRegion>(ANATOMICAL_REGIONS[0]);
   const [viewMode, setViewMode] = useState<'hologram' | 'heart' | 'neuro'>('hologram');
-  const [isRotating, setIsRotating] = useState(true);
+  const isRotating = true; // Rotates slowly by default, user can still drag
   const [hoveredRegion, setHoveredRegion] = useState<AnatomicalRegion | null>(null);
 
   // Heart Rate simulation
@@ -551,35 +551,10 @@ export default function Medical3DVitalModel({
             <Activity className="w-5 h-5 text-white animate-pulse" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black tracking-widest uppercase text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-full border border-cyan-500/30">
-                3D BIOMETRIC EXPLORER
-              </span>
-              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                Live 3D Triage
-              </span>
-            </div>
-            <h3 className="text-base font-extrabold text-white tracking-tight mt-0.5">
+            <h3 className="text-base font-extrabold text-white tracking-tight">
               Interactive Anatomical Vital Model
             </h3>
           </div>
-        </div>
-
-        {/* Viewport Control Buttons */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsRotating(prev => !prev)}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
-              isRotating
-                ? 'bg-cyan-950/60 border-cyan-500/40 text-cyan-300'
-                : 'bg-slate-900 border-slate-700 text-slate-400'
-            }`}
-            title="Toggle 360 Auto-Rotation"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 ${isRotating ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">{isRotating ? 'Auto-Rotate ON' : 'Paused'}</span>
-          </button>
         </div>
       </div>
 

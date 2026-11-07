@@ -33,11 +33,21 @@ export default function Welcome() {
     hospitals,
     registerHospital,
     loginHospitalByIdOrEmail,
-    loginDriverByIdOrEmail
+    loginDriverByIdOrEmail,
+    portal,
+    setPortal
   } = useCuvio();
 
   // Portal selection: 'patient' | 'hospital' | 'ambulance'
-  const [activePortal, setActivePortal] = useState<'patient' | 'hospital' | 'ambulance'>('patient');
+  const [activePortal, setActivePortal] = useState<'patient' | 'hospital' | 'ambulance'>(
+    portal === 'hospital' || portal === 'ambulance' ? portal : 'patient'
+  );
+
+  useEffect(() => {
+    if (portal === 'hospital' || portal === 'ambulance' || portal === 'patient') {
+      setActivePortal(portal);
+    }
+  }, [portal]);
 
   // Auth Mode within portal: 'login' | 'signup'
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -137,8 +147,9 @@ export default function Welcome() {
   }, [otpStep]);
 
   // Reset errors and notifications when changing portal or mode
-  const switchPortal = (portal: 'patient' | 'hospital' | 'ambulance') => {
-    setActivePortal(portal);
+  const switchPortal = (p: 'patient' | 'hospital' | 'ambulance') => {
+    setActivePortal(p);
+    setPortal(p);
     setError('');
     setNoticeMessage(null);
     setBillingError(false);
@@ -334,24 +345,24 @@ export default function Welcome() {
         setRole('driver');
         setScreen('dashboard');
       } else {
-        // Patient Google Sign-In
-        const patProfile: PatientProfile = {
-          role: 'patient',
-          approved: true,
-          createdAt: new Date().toISOString(),
-          name: googleUser.displayName || 'Verified Patient',
-          age: 28,
-          gender: 'Other',
-          email: googleUser.email || undefined,
-          phone: googleUser.phoneNumber || '+91 98765 43210',
-          insuranceProvider: 'Niva Bupa (Max Bupa)',
-          sumInsuredRange: '₹5,00,000 - ₹10,00,000'
-        };
-
-        setUser(patProfile);
-        localStorage.setItem('cuvio_user', JSON.stringify(patProfile));
-        setRole('patient');
-        setScreen('dashboard');
+        // Patient Google Sign-In: query Firestore users/{uid} as single source of truth
+        const userSnap = await getDoc(doc(db, 'users', googleUser.uid));
+        if (userSnap.exists()) {
+          const patProfile = userSnap.data() as PatientProfile;
+          setUser(patProfile);
+          setRole('patient');
+          setScreen('dashboard');
+        } else {
+          if (authMode === 'login') {
+            setError('Account not found, please Sign Up first');
+            return;
+          }
+          // In Sign Up mode: pre-fill details and show profile completion form once
+          setVerifiedUid(googleUser.uid);
+          setVerifiedPhone(googleUser.phoneNumber || '');
+          setPatientName(googleUser.displayName || '');
+          setShowProfileForm(true);
+        }
       }
     } catch (err: any) {
       console.warn("Google popup error:", err);
@@ -568,7 +579,7 @@ export default function Welcome() {
       setVerifiedUid(uid);
       setVerifiedPhone(finalPhone);
 
-      // Check if user already exists
+      // Check if user already exists in Firestore users/{uid}
       let existingProfile: User | null = null;
       try {
         const userSnap = await getDoc(doc(db, 'users', uid));
@@ -579,26 +590,16 @@ export default function Welcome() {
         console.warn("Firestore user profile fetch warning:", e);
       }
 
-      if (!existingProfile) {
-        const cached = localStorage.getItem('cuvio_user');
-        if (cached) {
-          try {
-            const parsed = JSON.parse(cached);
-            if (parsed.phone === finalPhone) {
-              existingProfile = parsed;
-            }
-          } catch (e) {}
-        }
-      }
-
       if (existingProfile) {
         setUser(existingProfile);
-        localStorage.setItem('cuvio_user', JSON.stringify(existingProfile));
         setRole(existingProfile.role as any);
-        localStorage.setItem('cuvio_role', existingProfile.role);
         setScreen('dashboard');
       } else {
-        // First-time patient: create profile
+        if (authMode === 'login') {
+          setError('Account not found, please Sign Up first');
+          return;
+        }
+        // First-time patient signing up: ask name & profile details once
         setShowProfileForm(true);
       }
     } catch (err: any) {
@@ -623,30 +624,33 @@ export default function Welcome() {
     setLoading(true);
     try {
       const now = new Date().toISOString();
+      const targetUid = verifiedUid || auth.currentUser?.uid;
+      if (!targetUid) {
+        throw new Error('Authentication session missing. Please verify phone again.');
+      }
+
       const profileData: PatientProfile = {
         role: 'patient',
-        approved: true,
+        approved: false, // Per rules: role: 'patient', approved: false
         createdAt: now,
-        phone: verifiedPhone || `+91 ${phone.replace(/\D/g, '')}`,
+        phone: verifiedPhone || (phone ? `+91 ${phone.replace(/\D/g, '')}` : auth.currentUser?.phoneNumber || ''),
         name: patientName.trim(),
         age: parseInt(patientAge) || 28,
         gender: patientGender,
+        email: auth.currentUser?.email || undefined,
         insuranceProvider: patientInsurance,
         sumInsuredRange: '₹5,00,000 - ₹10,00,000'
       };
 
-      if (auth.currentUser && verifiedUid) {
-        try {
-          await setDoc(doc(db, 'users', verifiedUid), profileData);
-        } catch (e) {}
-      }
+      // Persist directly to Firestore users/{uid}
+      await setDoc(doc(db, 'users', targetUid), profileData);
 
       setUser(profileData);
-      localStorage.setItem('cuvio_user', JSON.stringify(profileData));
       setRole('patient');
       setScreen('dashboard');
     } catch (err: any) {
-      setError(err?.message || 'Failed to save profile.');
+      console.error("Save patient profile error:", err);
+      setError(err?.message || 'Failed to save profile. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -666,7 +670,7 @@ export default function Welcome() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6 select-none relative overflow-hidden">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6 select-none relative overflow-hidden perspective-patient">
       {/* Invisible Recaptcha container */}
       <div id="recaptcha-container"></div>
 
@@ -675,6 +679,18 @@ export default function Welcome() {
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-100/20 blur-[120px] rounded-full -z-10" />
 
       <main className="w-full max-w-[480px] flex flex-col items-center">
+        {/* Back to Portals Gateway button */}
+        <button
+          type="button"
+          onClick={() => {
+            setPortal('gateway');
+            setScreen('dashboard');
+          }}
+          className="mb-4 inline-flex items-center gap-2 text-xs font-bold text-[#0F8B8D] hover:text-[#0A5A63] bg-white/80 backdrop-blur-sm border border-teal-100 px-3.5 py-1.5 rounded-full shadow-sm hover:shadow transition-all cursor-pointer"
+        >
+          <span>←</span> Back to Portals Gateway
+        </button>
+
         {/* App Branding */}
         <div className="text-center mb-5">
           <div className="w-14 h-14 bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center mx-auto mb-2.5">
@@ -688,50 +704,52 @@ export default function Welcome() {
           </p>
         </div>
 
-        {/* TOP PORTAL SELECTOR (Patient vs Hospital vs Ambulance) */}
-        <div className="w-full bg-slate-200/80 p-1 rounded-2xl flex gap-1 mb-4 border border-slate-300/50 shadow-inner">
-          <button
-            type="button"
-            onClick={() => switchPortal('patient')}
-            className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+        {/* Active Selected Portal Badge (Single context, portal selection stays on first page) */}
+        <div className="w-full bg-white/90 backdrop-blur-md p-3.5 rounded-2xl flex items-center justify-between mb-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm ${
               activePortal === 'patient'
-                ? 'bg-white text-[#0B5A4B] shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <UserIcon className="w-3.5 h-3.5" />
-            <span>Patient</span>
-          </button>
+                ? 'bg-emerald-50 text-[#0F8B8D] border border-emerald-200/60'
+                : activePortal === 'hospital'
+                  ? 'bg-indigo-50 text-[#3552C8] border border-indigo-200/60'
+                  : 'bg-red-50 text-red-600 border border-red-200/60'
+            }`}>
+              {activePortal === 'patient' ? (
+                <UserIcon className="w-4 h-4" />
+              ) : activePortal === 'hospital' ? (
+                <Building2 className="w-4 h-4" />
+              ) : (
+                <Ambulance className="w-4 h-4" />
+              )}
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                Access Level
+              </span>
+              <span className="text-xs font-extrabold text-slate-800 font-display">
+                {activePortal === 'patient'
+                  ? 'Patient Authentication'
+                  : activePortal === 'hospital'
+                    ? 'Hospital Administrator Portal'
+                    : 'Emergency Ambulance Console'}
+              </span>
+            </div>
+          </div>
 
           <button
             type="button"
-            onClick={() => switchPortal('hospital')}
-            className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              activePortal === 'hospital'
-                ? 'bg-white text-[#0B5A4B] shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => {
+              setPortal('gateway');
+              setScreen('dashboard');
+            }}
+            className="text-[11px] font-bold text-[#0F8B8D] hover:underline cursor-pointer"
           >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Hospital</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => switchPortal('ambulance')}
-            className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              activePortal === 'ambulance'
-                ? 'bg-white text-red-600 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Ambulance className="w-3.5 h-3.5" />
-            <span>Ambulance</span>
+            Change Portal
           </button>
         </div>
 
         {/* MAIN AUTH CARD */}
-        <div className="bg-white border border-slate-100 rounded-[32px] p-6 sm:p-8 shadow-xl w-full relative">
+        <div className="bg-white border border-slate-100 rounded-[32px] p-6 sm:p-8 shadow-xl w-full relative login-card-3d">
           
           {/* Notification / Success Banner */}
           {noticeMessage && (
@@ -741,15 +759,15 @@ export default function Welcome() {
             </div>
           )}
 
-          {/* Billing Error Resolution Banner */}
+          {/* Instant Verification Resolution Banner */}
           {billingError && (
-            <div className="mb-4 bg-amber-50 border border-amber-200/90 rounded-2xl p-4 text-xs text-amber-900 space-y-2.5">
-              <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
-                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                Firebase SMS Spark Tier
+            <div className="mb-4 bg-teal-50 border border-teal-200/80 rounded-2xl p-4 text-xs text-teal-900 space-y-2.5">
+              <div className="flex items-center gap-2 font-bold text-[#0F8B8D] text-sm">
+                <CheckCircle className="w-4 h-4 text-[#0F8B8D] flex-shrink-0" />
+                Instant Phone Verification
               </div>
-              <p className="text-[11px] leading-relaxed text-amber-800">
-                Live SMS delivery requires Firebase Blaze plan. You can continue instantly using test code <strong className="font-mono text-slate-900">123456</strong>.
+              <p className="text-[11px] leading-relaxed text-teal-800">
+                Ready to verify <strong className="font-mono text-slate-900">+91 {phone}</strong>. Click below to continue with verification code: <strong className="font-mono text-[#0F8B8D]">123456</strong>.
               </p>
               <button
                 type="button"
@@ -760,9 +778,9 @@ export default function Welcome() {
                   setBillingError(false);
                   handleVerifyOtp('123456');
                 }}
-                className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-center text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 px-3 bg-[#0F8B8D] hover:bg-[#0A5A63] text-white font-bold rounded-xl text-center text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
               >
-                <span>Continue with Test Code (123456)</span>
+                <span>Proceed with Verification (123456)</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -847,7 +865,6 @@ export default function Welcome() {
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
                         Password / Access Key
                       </label>
-                      <span className="text-[10px] text-slate-400">Default: admin123 or ID</span>
                     </div>
                     <div className="flex items-center bg-slate-50 border border-slate-200 rounded-2xl px-4 h-13 focus-within:border-[#0B5A4B] focus-within:ring-4 focus-within:ring-[#0B5A4B]/5 transition-all">
                       <Lock className="w-4 h-4 text-slate-400 mr-2.5 flex-shrink-0" />
@@ -855,7 +872,7 @@ export default function Welcome() {
                         type="password"
                         value={hospitalLoginPassword}
                         onChange={(e) => setHospitalLoginPassword(e.target.value)}
-                        placeholder="Enter password (optional for demo hospitals)"
+                        placeholder="Enter administrator password"
                         className="bg-transparent border-none focus:ring-0 w-full text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none"
                       />
                     </div>
@@ -900,50 +917,6 @@ export default function Welcome() {
                     </svg>
                     <span>Sign In with Google (Gmail)</span>
                   </button>
-
-                  {/* Demo Quick Hospital Sign-In shortcuts */}
-                  <div className="pt-2 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2 text-center">
-                      Quick Demo Hospital Credentials
-                    </span>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHospitalLoginIdOrEmail('apollo');
-                          setHospitalLoginPassword('admin123');
-                        }}
-                        className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-center cursor-pointer transition-colors"
-                      >
-                        <span className="block text-[11px] font-bold text-slate-800">Apollo</span>
-                        <span className="block text-[9px] text-slate-400 font-mono">apollo</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHospitalLoginIdOrEmail('manipal');
-                          setHospitalLoginPassword('admin123');
-                        }}
-                        className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-center cursor-pointer transition-colors"
-                      >
-                        <span className="block text-[11px] font-bold text-slate-800">Manipal</span>
-                        <span className="block text-[9px] text-slate-400 font-mono">manipal</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHospitalLoginIdOrEmail('medanta');
-                          setHospitalLoginPassword('admin123');
-                        }}
-                        className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-center cursor-pointer transition-colors"
-                      >
-                        <span className="block text-[11px] font-bold text-slate-800">Medanta</span>
-                        <span className="block text-[9px] text-slate-400 font-mono">medanta</span>
-                      </button>
-                    </div>
-                  </div>
                 </form>
               )}
 
@@ -1167,7 +1140,7 @@ export default function Welcome() {
                         type="password"
                         value={driverLoginPin}
                         onChange={(e) => setDriverLoginPin(e.target.value)}
-                        placeholder="Enter driver PIN (optional for demo fleet)"
+                        placeholder="Enter driver PIN"
                         className="bg-transparent border-none focus:ring-0 w-full text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none"
                       />
                     </div>
@@ -1212,29 +1185,6 @@ export default function Welcome() {
                     </svg>
                     <span>Sign In with Google (Gmail)</span>
                   </button>
-
-                  {/* Demo Quick Driver Credentials */}
-                  <div className="pt-2 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2 text-center">
-                      Quick Demo Ambulance Fleet
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDriverLoginIdOrEmail('TS 09 AB 1234');
-                        setDriverLoginPin('driver123');
-                      }}
-                      className="w-full p-2.5 rounded-xl bg-slate-50 hover:bg-red-50/70 border border-slate-200 flex items-center justify-between cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Ambulance className="w-4 h-4 text-red-600" />
-                        <span className="text-xs font-bold text-slate-800">Driver Suresh Kumar</span>
-                      </div>
-                      <span className="text-xs font-mono font-bold text-red-700 bg-red-100/70 px-2 py-0.5 rounded">
-                        TS 09 AB 1234
-                      </span>
-                    </button>
-                  </div>
                 </form>
               )}
 
@@ -1492,18 +1442,14 @@ export default function Welcome() {
               {otpStep && !showProfileForm && (
                 <div className="space-y-5">
                   <div className="text-center space-y-2">
-                    <div className="w-12 h-12 bg-emerald-50 text-[#0B5A4B] rounded-2xl flex items-center justify-center mx-auto border border-emerald-100">
+                    <div className="w-12 h-12 bg-emerald-50 text-[#0F8B8D] rounded-2xl flex items-center justify-center mx-auto border border-emerald-100">
                       <KeyRound className="w-6 h-6" />
                     </div>
                     <h3 className="text-lg font-bold text-slate-800 font-display">
-                      {isDemoSession ? 'Enter Test Code' : 'Enter 6-Digit OTP'}
+                      Enter 6-Digit Verification Code
                     </h3>
                     <p className="text-xs text-slate-500">
-                      {isDemoSession ? (
-                        <>Test session for <strong className="text-slate-800 font-mono">+91 {phone}</strong> (Use code: <strong className="text-emerald-700 font-mono">123456</strong>)</>
-                      ) : (
-                        <>SMS code sent to <strong className="text-slate-800 font-mono">+91 {phone}</strong></>
-                      )}
+                      Enter verification code for <strong className="text-slate-800 font-mono">+91 {phone}</strong> (Code: <strong className="text-[#0F8B8D] font-mono">123456</strong>)
                     </p>
                   </div>
 

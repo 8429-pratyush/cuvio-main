@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Hospital, Doctor, BookingRequest, AmbulanceBooking, Prescription, User, Driver, UserRole, HospitalProfile, AmbulanceProfile } from '../types';
+import { Hospital, Doctor, BookingRequest, AmbulanceBooking, Prescription, User, Driver, UserRole, HospitalProfile, AmbulanceProfile, ChatMessage } from '../types';
 import { collection, doc, setDoc, onSnapshot, writeBatch, deleteDoc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -8,6 +8,9 @@ import { assignQueueTokenAndEntry, cancelQueueEntry, getKolkataDateString } from
 interface CuvioContextType {
   user: User | null;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
+  isProfileLoading: boolean;
+  portal: 'gateway' | 'patient' | 'hospital' | 'ambulance';
+  setPortal: (portal: 'gateway' | 'patient' | 'hospital' | 'ambulance') => void;
   currentDriver: Driver | null;
   setCurrentDriver: React.Dispatch<React.SetStateAction<Driver | null>>;
   currentScreen: 'splash' | 'onboarding' | 'login' | 'dashboard' | 'hospital-selection' | 'hospital-profile' | 'health-concern' | 'specialist-suggestion' | 'cost-calculator' | 'queue-tracking' | 'ambulance' | 'prescriptions' | 'profile';
@@ -17,18 +20,21 @@ interface CuvioContextType {
   bookings: BookingRequest[];
   ambulanceBookings: AmbulanceBooking[];
   prescriptions: Prescription[];
+  messages: ChatMessage[];
+  liveAlert: string | null;
+  dismissLiveAlert: () => void;
   activeHospitalId: string | null;
   activeDoctorId: string | null;
   activeBookingId: string | null;
   activeAmbulanceId: string | null;
   symptomsSearch: string;
-  adminTab: 'bookings' | 'queue' | 'doctors' | 'emergency' | 'settings';
+  adminTab: 'bookings' | 'queue' | 'doctors' | 'emergency' | 'settings' | 'messages';
   adminHospitalId: string | null;
   
   // Actions
   setScreen: (screen: 'splash' | 'onboarding' | 'login' | 'dashboard' | 'hospital-selection' | 'hospital-profile' | 'health-concern' | 'specialist-suggestion' | 'cost-calculator' | 'queue-tracking' | 'ambulance' | 'prescriptions' | 'profile') => void;
   setRole: (role: 'patient' | 'hospital' | 'ambulance' | 'admin' | 'driver') => void;
-  setAdminTab: (tab: 'bookings' | 'queue' | 'doctors' | 'emergency' | 'settings') => void;
+  setAdminTab: (tab: 'bookings' | 'queue' | 'doctors' | 'emergency' | 'settings' | 'messages') => void;
   setAdminHospitalId: (id: string | null) => void;
   login: (name: string, phone: string, insuranceProvider?: string, sumInsuredRange?: string) => void;
   signUp: (name: string, phone: string, insuranceProvider?: string, sumInsuredRange?: string) => Promise<void>;
@@ -46,6 +52,7 @@ interface CuvioContextType {
   setSymptomsSearch: (search: string) => void;
   bookAppointment: (hospitalId: string, doctorId: string, department: string, date: string, time: string) => BookingRequest;
   cancelAppointment: (bookingId: string) => Promise<void>;
+  sendMessage: (clinicId: string, clinicName: string, text: string, from: 'patient' | 'hospital') => Promise<void>;
   
   // Admin Actions
   updateBookingStatus: (bookingId: string, status: 'Confirmed' | 'Rescheduled' | 'Rejected', rescheduleTime?: string) => void;
@@ -387,10 +394,37 @@ const initialPrescriptions: Prescription[] = [
 ];
 
 export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('cuvio_user');
-    return saved ? JSON.parse(saved) : null;
+  const [user, setUser] = useState<User | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState<boolean>(true);
+  const [portal, setPortalState] = useState<'gateway' | 'patient' | 'hospital' | 'ambulance'>(() => {
+    const saved = localStorage.getItem('cuvio_portal');
+    return (saved as any) || 'gateway';
   });
+
+  const setPortal = (p: 'gateway' | 'patient' | 'hospital' | 'ambulance') => {
+    setPortalState(p);
+    localStorage.setItem('cuvio_portal', p);
+    if (p === 'patient') {
+      setRoleState('patient');
+    } else if (p === 'hospital') {
+      setRoleState('admin');
+    } else if (p === 'ambulance') {
+      setRoleState('driver');
+    }
+  };
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [liveAlert, setLiveAlert] = useState<string | null>(null);
+  const dismissLiveAlert = () => setLiveAlert(null);
+
+  // Auto-dismiss live alerts after 6 seconds
+  useEffect(() => {
+    if (!liveAlert) return;
+    const timer = setTimeout(() => {
+      setLiveAlert(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [liveAlert]);
 
   const [currentDriver, setCurrentDriver] = useState<Driver | null>(() => {
     const saved = localStorage.getItem('cuvio_driver');
@@ -405,7 +439,7 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saved = localStorage.getItem('cuvio_role');
     return (saved as any) || 'patient';
   });
-  const [adminTab, setAdminTab] = useState<'bookings' | 'queue' | 'doctors' | 'emergency' | 'settings'>('bookings');
+  const [adminTab, setAdminTab] = useState<'bookings' | 'queue' | 'doctors' | 'emergency' | 'settings' | 'messages'>('bookings');
 
   // Automatically persist screen and role on modification
   useEffect(() => {
@@ -536,6 +570,21 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         list.sort((a, b) => b.id.localeCompare(a.id));
         setBookings(list);
         localStorage.setItem('cuvio_bookings', JSON.stringify(list));
+
+        // Cross-portal real-time alerts
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added' && !snapshot.metadata.hasPendingWrites) {
+            const b = change.doc.data() as BookingRequest;
+            setLiveAlert(`🔔 New Token Booked: ${b.queueToken || '#' + b.tokenNumber} for ${b.patientName} at ${b.hospitalName}!`);
+          } else if (change.type === 'modified') {
+            const b = change.doc.data() as BookingRequest;
+            if (b.status === 'Confirmed' || b.queueStatus === 'In Consultation') {
+              setLiveAlert(`⚡ Token ${b.queueToken || '#' + b.tokenNumber}: Now Serving! ${b.patientName}, please proceed.`);
+            } else if (b.status === 'Completed') {
+              setLiveAlert(`✅ Consultation complete for ${b.patientName}. Digital prescription issued.`);
+            }
+          }
+        });
       }
     }, (err) => {
       console.warn("Firestore collection 'bookings' unavailable or permission denied; using local cache:", err?.message || err);
@@ -548,6 +597,22 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       list.sort((a, b) => b.id.localeCompare(a.id));
       setAmbulanceBookings(list);
       localStorage.setItem('cuvio_ambulance_bookings', JSON.stringify(list));
+
+      // Cross-portal ambulance real-time alerts
+      snapshot.docChanges().forEach(change => {
+        const a = change.doc.data() as AmbulanceBooking;
+        if (change.type === 'added' && !snapshot.metadata.hasPendingWrites) {
+          setLiveAlert(`🚨 Emergency Ambulance SOS requested by ${a.patientName} for ${a.destinationHospitalName}!`);
+        } else if (change.type === 'modified') {
+          if (a.status === 'Dispatched') {
+            setLiveAlert(`🚑 Ambulance Dispatched: Driver ${a.driverName} is en route (ETA ~${a.driverEta} min).`);
+          } else if (a.status === 'Arrived') {
+            setLiveAlert(`📍 Ambulance Arrived at pickup: ${a.pickupLocation}!`);
+          } else if (a.status === 'Completed') {
+            setLiveAlert(`🏥 Patient safely checked in at Emergency Ward. Mission complete!`);
+          }
+        }
+      });
     }, (err) => {
       console.warn("Firestore collection 'ambulanceBookings' unavailable or permission denied; using local cache:", err?.message || err);
       setIsOfflineMode(true);
@@ -576,6 +641,26 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsOfflineMode(true);
     });
 
+    // 6. Messages Collection (Real-time 2-way patient-hospital communication)
+    const unsubMessages = onSnapshot(collection(db, 'messages'), (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage));
+      list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      setMessages(list);
+
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'added' && !snapshot.metadata.hasPendingWrites) {
+          const m = change.doc.data() as ChatMessage;
+          if (m.from === 'hospital') {
+            setLiveAlert(`💬 Message from ${m.clinicName || 'Hospital'}: "${m.text}"`);
+          } else {
+            setLiveAlert(`💬 Message from patient ${m.name}: "${m.text}"`);
+          }
+        }
+      });
+    }, (err) => {
+      console.warn("Firestore collection 'messages' error:", err);
+    });
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -584,50 +669,44 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubBookings();
       unsubAmbulances();
       unsubPrescriptions();
+      unsubMessages();
     };
   }, []);
 
-  // Synchronize onAuthStateChanged for returning users with instant role-based cache
+  // Synchronize onAuthStateChanged: Firestore is the single source of truth for user profiles
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      setIsProfileLoading(true);
       if (fbUser) {
-        // Cache read for instant UI hydration
-        const cachedRole = localStorage.getItem('cuvio_role') as any;
-        if (cachedRole) {
-          setRoleState(cachedRole);
-        }
-        const cachedUser = localStorage.getItem('cuvio_user');
-        if (cachedUser) {
-          try {
-            setUser(JSON.parse(cachedUser));
-          } catch (e) {}
-        }
-
-        // Background parallel profile fetch from users/{uid}
         try {
           const userSnap = await getDoc(doc(db, 'users', fbUser.uid));
           if (userSnap.exists()) {
             const profile = userSnap.data() as User;
             setUser(profile);
-            localStorage.setItem('cuvio_user', JSON.stringify(profile));
             if (profile.role) {
               setRoleState(profile.role as any);
               localStorage.setItem('cuvio_role', profile.role);
             }
+            // Navigate directly to dashboard if on landing/login/onboarding
+            setScreenState(prev => (prev === 'splash' || prev === 'login' || prev === 'onboarding') ? 'dashboard' : prev);
+          } else {
+            // User authenticated in Firebase Auth but profile does not exist in users/{uid} yet
+            setUser(null);
           }
         } catch (err) {
-          console.warn("Background user doc fetch error:", err);
+          console.warn("Firestore users/{uid} fetch error:", err);
+          setUser(null);
         }
       } else {
         setUser(null);
-        localStorage.removeItem('cuvio_user');
       }
+      setIsProfileLoading(false);
     });
 
     return () => unsubAuth();
   }, []);
 
-  // Real-time synchronization of users/{uid} document
+  // Real-time synchronization of users/{uid} document from Firestore
   useEffect(() => {
     const currentUid = auth.currentUser?.uid;
     if (!currentUid) return;
@@ -638,7 +717,6 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const userData = snapshot.data() as User;
         setUser(prev => {
           if (JSON.stringify(prev) === JSON.stringify(userData)) return prev;
-          localStorage.setItem('cuvio_user', JSON.stringify(userData));
           if (userData.role) {
             setRoleState(userData.role as any);
             localStorage.setItem('cuvio_role', userData.role);
@@ -653,7 +731,7 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       unsubUser();
     };
-  }, [auth.currentUser?.uid, user?.phone]);
+  }, [auth.currentUser?.uid]);
 
   const setScreen = (screen: typeof currentScreen) => {
     setScreenState(screen);
@@ -672,7 +750,7 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newUser: User = { 
       uid: docId,
       role: 'patient', 
-      approved: true, 
+      approved: false, 
       createdAt: new Date().toISOString(), 
       name, 
       phone, 
@@ -682,7 +760,6 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       sumInsuredRange: sumInsuredRange || '₹5,00,000 - ₹10,00,000' 
     };
     setUser(newUser);
-    localStorage.setItem('cuvio_user', JSON.stringify(newUser));
     setScreenState('dashboard');
 
     // Persist to backend Firestore API
@@ -703,7 +780,7 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newPatient: User = {
       uid: docId,
       role: 'patient',
-      approved: true,
+      approved: false,
       createdAt: new Date().toISOString(),
       name,
       phone: auth.currentUser?.phoneNumber || phone,
@@ -724,7 +801,6 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }).catch(e => console.warn('Sync patient signup to Firestore error:', e));
 
     setUser(newPatient);
-    localStorage.setItem('cuvio_user', JSON.stringify(newPatient));
     setScreenState('dashboard');
   };
 
@@ -736,7 +812,6 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (snap.exists()) {
           const u = snap.data() as User;
           setUser(u);
-          localStorage.setItem('cuvio_user', JSON.stringify(u));
           setScreenState('dashboard');
           return u;
         }
@@ -751,7 +826,6 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (data.user) {
           const u = data.user as User;
           setUser(u);
-          localStorage.setItem('cuvio_user', JSON.stringify(u));
           setScreenState('dashboard');
           return u;
         }
@@ -764,7 +838,7 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setScreenState('dashboard');
       return user;
     }
-    throw new Error("No account found for this number. Please sign up.");
+    throw new Error("Account not found, please Sign Up first");
   };
 
   const loginHospitalByIdOrEmail = async (idOrEmail: string, password?: string): Promise<Hospital> => {
@@ -989,7 +1063,6 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     signOut(auth).catch(e => console.warn("Firebase sign out error:", e));
     setUser(null);
     setCurrentDriver(null);
-    localStorage.removeItem('cuvio_user');
     localStorage.removeItem('cuvio_driver');
     localStorage.removeItem('cuvio_role');
     localStorage.removeItem('cuvio_screen');
@@ -1004,10 +1077,11 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setUser(prev => {
       if (!prev) return null;
       const nextUser = { ...prev, ...updatedData } as User;
-      localStorage.setItem('cuvio_user', JSON.stringify(nextUser));
 
       if (currentUid) {
-        setDoc(doc(db, 'users', currentUid), updatedData, { merge: true })
+        // Strip immutable role/approved/hospitalId to strictly follow Firestore rules
+        const { role: _r, approved: _a, hospitalId: _h, uid: _u, ...safeUpdates } = updatedData as any;
+        setDoc(doc(db, 'users', currentUid), safeUpdates, { merge: true })
           .catch(err => {
             console.warn("Offline/unreachable updating user in client Firestore:", err);
           });
@@ -1133,7 +1207,7 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newBooking: BookingRequest = {
       id: bookingId,
       patientId,
-      patientName: user?.name || 'Rahul Verma',
+      patientName: user?.name || 'Patient',
       patientPhone: user?.phone || '+91 98765 43210',
       hospitalId,
       hospitalName: hospital?.name || 'Hospital',
@@ -1739,13 +1813,41 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
   };
 
+  const sendMessage = async (clinicId: string, clinicName: string, text: string, from: 'patient' | 'hospital') => {
+    const msgId = `msg-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const newMsg: ChatMessage = {
+      id: msgId,
+      clinicId,
+      clinicName,
+      uid: user?.phone || user?.email || 'anon-uid',
+      name: user?.name || (from === 'hospital' ? `${clinicName} Desk` : 'Patient'),
+      from,
+      text,
+      createdAt: Date.now()
+    };
+
+    setMessages(prev => [...prev, newMsg]);
+
+    try {
+      await setDoc(doc(db, 'messages', msgId), newMsg);
+    } catch (err) {
+      console.warn("Offline/unreachable sending message:", err);
+    }
+  };
 
   return (
     <CuvioContext.Provider value={{
       user,
       setUser,
+      isProfileLoading,
       currentDriver,
       setCurrentDriver,
+      portal,
+      setPortal,
+      messages,
+      liveAlert,
+      dismissLiveAlert,
+      sendMessage,
       currentScreen,
       role,
       hospitals,

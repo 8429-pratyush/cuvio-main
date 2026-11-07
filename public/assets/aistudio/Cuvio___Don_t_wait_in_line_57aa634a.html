@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cuvio – Don’t wait in line</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F2F8F7;--surface:#fff;--ink:#0E2A33;--muted:#48646C;--teal:#0F8B8D;--link:#0B6B6D;--amber:#F2A93B;--line:#CBDDDB;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#081A1F;--surface:#0F2830;--ink:#E6F2F1;--muted:#9DB8BC;--teal:#3CC4C6;--link:#5FD6D8;--line:#1E3C44}}
+:root[data-theme="dark"]{--bg:#081A1F;--surface:#0F2830;--ink:#E6F2F1;--muted:#9DB8BC;--teal:#3CC4C6;--link:#5FD6D8;--line:#1E3C44}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 1.05rem/1.6 Figtree,system-ui,sans-serif}
+h1,h2,h3{font-family:'Bricolage Grotesque',Figtree,sans-serif;margin:0;line-height:1.05;letter-spacing:-.02em}
+a{color:var(--link)}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+nav{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0}
+.brand{display:flex;align-items:center;gap:10px;font:800 1.45rem 'Bricolage Grotesque',sans-serif;text-decoration:none;color:var(--ink)}
+.links{display:flex;gap:22px;align-items:center}
+.links a{color:var(--muted);text-decoration:none;font-weight:500}
+.links a:hover{color:var(--ink)}
+.btn{display:inline-block;padding:13px 22px;border-radius:999px;font-weight:600;text-decoration:none;border:2px solid var(--ink);cursor:pointer;font-family:inherit;font-size:1rem}
+.btn.p{background:var(--ink);color:var(--bg)}
+.btn.s{background:transparent;color:var(--ink)}
+.hero{display:grid;grid-template-columns:1.05fr 1fr;gap:24px;align-items:center;padding:40px 0 72px}
+h1{font-size:clamp(2.7rem,6.2vw,5rem);font-weight:800}
+.hero p.lead{font-size:1.2rem;color:var(--muted);max-width:30em;margin:22px 0 30px}
+.cta{display:flex;gap:12px;flex-wrap:wrap}
+.small{color:var(--muted);font-size:.95rem;margin-top:22px}
+.stage{position:relative;height:520px}
+#q3d{width:100%;height:100%;display:block}
+.hud{position:absolute;left:0;bottom:6px;right:0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:10px 18px;font-weight:600;font-size:.95rem}
+.pill b{color:var(--link)}
+.btn.n{padding:10px 18px;font-size:.95rem}
+section{padding:72px 0}
+h2{font-size:clamp(2rem,4.2vw,3.2rem);font-weight:800;max-width:15em}
+.sub{color:var(--muted);max-width:36em;margin:16px 0 0}
+.steps{list-style:none;margin:44px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.steps li{padding:26px 22px 0 0;border-top:3px solid var(--ink);position:relative}
+.steps li::before{content:attr(data-n);position:absolute;top:-17px;left:0;background:var(--bg);padding-right:10px;font:800 1.5rem 'Bricolage Grotesque',sans-serif;color:var(--link)}
+.steps h3{font-size:1.35rem;margin:6px 0 8px}
+.steps p,.feat p{margin:0;color:var(--muted)}
+.feat{display:grid;grid-template-columns:repeat(3,1fr);gap:40px 36px;margin-top:44px}
+.feat div{border-top:1px solid var(--line);padding-top:18px}
+.feat h3{font-size:1.3rem;margin-bottom:8px}
+.sos{background:#8E1F28;color:#FFF1F0;padding:80px 0}
+.sos h2{color:#fff}.sos .sub{color:#FFD9D6}
+.sosgrid{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center}
+.flow{position:relative;display:flex;flex-direction:column;gap:34px;padding-left:34px}
+.flow::before{content:"";position:absolute;left:9px;top:10px;bottom:10px;width:2px;background:rgba(255,255,255,.35)}
+.flow div{position:relative;font-weight:500}
+.flow div::before{content:"";position:absolute;left:-34px;top:5px;width:20px;height:20px;border-radius:50%;background:#fff;border:5px solid #8E1F28;box-shadow:0 0 0 2px #fff}
+.flow small{display:block;color:#FFD9D6;font-weight:400}
+.dot{position:absolute;left:5px;top:10px;width:10px;height:10px;border-radius:50%;background:var(--amber);animation:go 3.6s ease-in-out infinite}
+@keyframes go{0%{top:10px}100%{top:calc(100% - 20px)}}
+.rule{margin-top:28px;padding-top:18px;border-top:1px solid rgba(255,255,255,.3);color:#FFD9D6}
+.clinic{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start}
+.clinic ul{margin:0;padding:0;list-style:none;display:grid;gap:14px}
+.clinic li{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 20px}
+.clinic li b{display:block}
+footer{border-top:1px solid var(--line);padding:30px 0 40px;color:var(--muted);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+@media(max-width:860px){
+.hero,.sosgrid,.clinic{grid-template-columns:1fr}
+.stage{height:380px}
+.steps{grid-template-columns:1fr;gap:34px}.feat{grid-template-columns:1fr}
+.links a:not(.btn){display:none}
+section{padding:52px 0}}
+@media(prefers-reduced-motion:reduce){.dot{animation:none}html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+<a class="brand" href="#top" aria-label="Cuvio home"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0F8B8D"/><path d="M5 17h6l3-7 4 12 3-5h6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Cuvio</a>
+<div class="links"><a href="#how">How it works</a><a href="#features">Features</a><a href="#emergency">Ambulance</a><a href="#clinics">For clinics</a><a class="btn p" href="https://cuvio-fnpw.vercel.app">Open app</a></div>
+</nav>
+
+<header class="hero" id="top">
+<div>
+<h1>Don’t wait in line. Wait anywhere else.</h1>
+<p class="lead">Cuvio is India’s Rapido for healthcare. Book your visit, watch your token move in real time, and reach the clinic just when it’s your turn.</p>
+<div class="cta"><a class="btn p" href="https://cuvio-fnpw.vercel.app">Try the live prototype</a><a class="btn s" href="#clinics">I run a clinic</a></div>
+<p class="small">Built for hospitals and clinics in Tier-2 and Tier-3 cities.</p>
+</div>
+<div class="stage">
+<canvas id="q3d" aria-label="3D demo of a patient queue moving forward" role="img"></canvas>
+<div class="hud"><div class="pill" id="hud">Token A-17 · 3 ahead · about 18 min</div><button class="btn s n" id="next" type="button">Call next token</button></div>
+</div>
+</header>
+</div>
+
+<section id="how"><div class="wrap">
+<h2>From booking to consultation in four steps</h2>
+<ol class="steps">
+<li data-n="1"><h3>Book a visit</h3><p>Pick a registered clinic and doctor. See the estimated cost before you go.</p></li>
+<li data-n="2"><h3>Get your token</h3><p>The AI wait-time engine tells you where you stand and how long it will take.</p></li>
+<li data-n="3"><h3>Stay where you are</h3><p>Your token updates live. You get a notification as the queue advances.</p></li>
+<li data-n="4"><h3>Walk in and leave with your prescription</h3><p>Be seen when it’s your turn. Your prescription arrives digitally.</p></li>
+</ol>
+</div></section>
+
+<section id="features" style="padding-top:0"><div class="wrap">
+<h2>Everything a clinic queue needs</h2>
+<div class="feat">
+<div><h3>AI token and wait-time engine</h3><p>Every patient gets a token and a realistic wait estimate that keeps updating through the day.</p></div>
+<div><h3>Upfront cost estimates</h3><p>Patients know what a visit is likely to cost before they leave home.</p></div>
+<div><h3>Digital prescriptions</h3><p>Doctors issue prescriptions in the app. Nothing to lose, nothing to decode.</p></div>
+<div><h3>Doctor unavailable? You know early</h3><p>If a doctor can’t make it, patients are told in advance, not after hours of waiting.</p></div>
+<div><h3>Auto-queue-advance alerts</h3><p>When the queue moves, patients are notified automatically. No need to ask the front desk.</p></div>
+<div><h3>Hospital admin panel</h3><p>Staff manage doctors, tokens and the live queue from one screen.</p></div>
+</div>
+</div></section>
+
+<section class="sos" id="emergency"><div class="wrap sosgrid">
+<div>
+<h2>Ambulance, booked once.</h2>
+<p class="sub">In an emergency, nobody should have to call five numbers. Book one time and the hospital takes it from there.</p>
+<p class="rule">Only registered hospitals appear on Cuvio.</p>
+</div>
+<div class="flow" aria-label="How an ambulance request works"><span class="dot"></span>
+<div>Patient books the ambulance<small>One request, one tap.</small></div>
+<div>Hospital admin assigns a driver<small>The hospital decides who goes.</small></div>
+<div>Driver sees only what’s needed<small>Pickup location and destination hospital.</small></div>
+<div>Driver ends shift<small>The hospital is notified and no new assignments arrive.</small></div>
+</div>
+</div></section>
+
+<section id="clinics"><div class="wrap clinic">
+<div>
+<h2>Ready to pilot Cuvio at your clinic?</h2>
+<p class="sub">Replace the crowded waiting area and the paper register. Patients arrive on time, your staff see the whole day at a glance.</p>
+<div class="cta" style="margin-top:28px"><a class="btn p" href="https://cuvio-fnpw.vercel.app">Open Cuvio</a></div>
+</div>
+<ul>
+<li><b>Live queue view</b>See who is waiting, who is next and how long the day will run.</li>
+<li><b>Advance notice for absences</b>Mark a doctor unavailable and patients are alerted early.</li>
+<li><b>Register your hospital</b>Get listed so patients nearby can book you directly.</li>
+</ul>
+</div></section>
+
+<div class="wrap"><footer><span><b>Cuvio</b> · Real-time queues for Indian healthcare</span><span>Founded by Pratyush · VIT Bhopal · 2026</span></footer></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var cv=document.getElementById('q3d'),hud=document.getElementById('hud'),btn=document.getElementById('next');
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+var now=14,me=17,N=7,tokens=[],busy=false,onAdvance=function(){};
+function showHud(){var a=me-now;hud.textContent=a<=0?'Token A-'+me+' · It’s your turn':'Token A-'+me+' · '+a+' ahead · about '+a*6+' min';}
+function advance(){
+  if(busy)return;busy=true;now++;
+  if(me<now)me=now+4;
+  showHud();onAdvance();
+  setTimeout(function(){busy=false;},700);
+}
+btn.addEventListener('click',advance);
+if(!reduce)setInterval(function(){if(!document.hidden)advance();},3400);
+try{
+  if(!window.THREE)throw 0;
+  var T=THREE,r=new T.WebGLRenderer({canvas:cv,alpha:true,antialias:true});
+  r.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  var sc=new T.Scene(),cam=new T.PerspectiveCamera(32,1,.1,80);
+  cam.position.set(0,1.8,14);cam.lookAt(0,0,0);
+  sc.add(new T.AmbientLight(0xffffff,.85));
+  var dl=new T.DirectionalLight(0xffffff,.9);dl.position.set(4,6,6);sc.add(dl);
+  var grp=new T.Group();grp.position.set(-1,-.2,0);sc.add(grp);
+  var geo=new T.BoxGeometry(2.6,1.5,.2),side=new T.MeshStandardMaterial({color:0x0b6b6d,roughness:.5});
+  function sp(s){return new T.Vector3(-2.4+s*1.15,-.9+s*.5,2-s*1.9);}
+  function face(t){
+    var x=t.cv.getContext('2d'),w=512,h=296,cur=t.slot===0,mine=t.num===me;
+    x.fillStyle=cur?'#F2A93B':mine?'#FFFFFF':'#0F8B8D';x.fillRect(0,0,w,h);
+    if(mine&&!cur){x.strokeStyle='#0F8B8D';x.lineWidth=14;x.strokeRect(7,7,w-14,h-14);}
+    x.fillStyle=cur?'#1A1200':mine?'#0E2A33':'#FFFFFF';x.textAlign='left';
+    x.font="800 140px 'Bricolage Grotesque',sans-serif";x.fillText('A-'+t.num,36,175);
+    x.font="600 38px Figtree,sans-serif";
+    x.fillText(cur?(mine?'Your turn':'Now serving'):(mine?'You · about '+t.slot*6+' min':'About '+t.slot*6+' min'),40,252);
+    t.tex.needsUpdate=true;
+  }
+  for(var i=0;i<N;i++){
+    var cvs=document.createElement('canvas');cvs.width=512;cvs.height=296;
+    var tex=new T.CanvasTexture(cvs);
+    var m=new T.Mesh(geo,[side,side,side,side,new T.MeshBasicMaterial({map:tex}),side]);
+    m.position.copy(sp(i));m.rotation.y=-.45;grp.add(m);
+    var t={num:now+i,slot:i,s:1,mesh:m,cv:cvs,tex:tex};tokens.push(t);face(t);
+  }
+  var ring=new T.Mesh(new T.TorusGeometry(1.8,.03,8,72),new T.MeshBasicMaterial({color:0xF2A93B,transparent:true,opacity:.7}));
+  ring.position.copy(sp(0));ring.rotation.y=-.45;grp.add(ring);
+  document.fonts&&document.fonts.ready.then(function(){tokens.forEach(face);});
+  onAdvance=function(){
+    var out=tokens.filter(function(t){return t.slot===0;})[0];
+    tokens.forEach(function(t){t.slot--;});
+    if(out)out.s=0;
+    tokens.forEach(function(t){if(t!==out)face(t);});
+    kick(1400);
+    setTimeout(function(){
+      if(!out)return;
+      out.num=now+N-1;out.slot=N-1;out.mesh.position.copy(sp(N-1));out.mesh.scale.setScalar(.01);out.s=1;face(out);
+    },650);
+  };
+  var mx=0,run=false,end=0;
+  addEventListener('pointermove',function(e){mx=(e.clientX/innerWidth-.5)*2;kick(600);});
+  function size(){var w=cv.clientWidth,h=cv.clientHeight;if(!w||!h)return;r.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();}
+  new ResizeObserver(function(){size();kick(300);}).observe(cv);size();
+  var away=new T.Vector3(-8,3,4);
+  function loop(ms){
+    grp.rotation.y+=(mx*.16-grp.rotation.y)*.06;
+    tokens.forEach(function(t){
+      var tg=t.slot<0?away:sp(t.slot);
+      t.mesh.position.lerp(tg,.09);
+      var k=t.mesh.scale.x+(t.s-t.mesh.scale.x)*.1;t.mesh.scale.setScalar(Math.max(k,.01));
+    });
+    var p=1+.05*Math.sin(ms/380);ring.scale.set(p,p,1);
+    r.render(sc,cam);
+    if(!reduce||performance.now()<end)requestAnimationFrame(loop);else run=false;
+  }
+  function kick(d){end=Math.max(end,performance.now()+d);if(!run){run=true;requestAnimationFrame(loop);}}
+  kick(1500);
+}catch(e){cv.style.display='none';}
+})();
+</script>
+</body>
+</html>

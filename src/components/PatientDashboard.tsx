@@ -40,11 +40,16 @@ export default function PatientDashboard() {
     updateAmbulanceStatus,
     updateUser,
     setRole,
-    setAdminTab
+    setAdminTab,
+    messages,
+    sendMessage,
+    setPortal
   } = useCuvio();
 
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('Orthopedics');
-  const [activeTab, setActiveTab] = useState<'overview' | 'doctors' | 'costs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'doctors' | 'costs' | 'chat'>('overview');
+  const [chatMessageInput, setChatMessageInput] = useState('');
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [ambulanceType, setAmbulanceType] = useState<'Basic' | 'ALS' | 'ICU'>('ALS');
   const [pickupAddress, setPickupAddress] = useState('My Current Location (Jubilee Hills, Hyd)');
   const [selectedHospitalForAmbulance, setSelectedHospitalForAmbulance] = useState('apollo');
@@ -419,14 +424,14 @@ export default function PatientDashboard() {
             onClick={() => setScreen('profile')} 
             className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity"
           >
-            <p className="text-xs font-bold text-slate-800">{user?.name || 'Rahul Verma'}</p>
+            <p className="text-xs font-bold text-slate-800">{user?.name || 'Patient'}</p>
             <p className="text-[10px] text-[#0B5A4B] font-semibold tracking-wide">View Profile & Settings</p>
           </div>
           <div 
             onClick={() => setScreen('profile')} 
             className="w-10 h-10 rounded-full border border-slate-100 overflow-hidden bg-emerald-50 text-[#0B5A4B] flex items-center justify-center font-bold shadow-inner cursor-pointer hover:scale-105 transition-all"
           >
-            {user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'RV'}
+            {user?.name ? user.name.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'PT'}
           </div>
           <button
             onClick={logout}
@@ -439,7 +444,7 @@ export default function PatientDashboard() {
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 pt-6">
+      <main className="flex-1 w-full max-w-4xl mx-auto px-4 pt-6 perspective-patient">
         <AnimatePresence mode="wait">
           
           {/* SCREEN 1: CLIENT PATIENT DASHBOARD */}
@@ -454,7 +459,7 @@ export default function PatientDashboard() {
               <div>
                 <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">PATIENT DASHBOARD</span>
                 <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight font-display mt-0.5">
-                  Hello, {user?.name ? user.name.split(' ')[0] : 'Rahul'}
+                  Hello, {user?.name ? user.name.split(' ')[0] : 'Patient'}
                 </h1>
                 <p className="text-slate-500 text-sm mt-1">
                   Access transparent medical pricing, real-time queues, and ambulance dispatches.
@@ -462,7 +467,7 @@ export default function PatientDashboard() {
               </div>
 
               {/* CUVIO CLINICAL AI HEALTH & OPD QUEUE ADVISOR HERO CARD */}
-              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-[#073D33] text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-slate-700">
+              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-[#073D33] text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-slate-700 patient-card-3d">
                 <div className="absolute right-0 top-0 p-8 opacity-10 pointer-events-none">
                   <Sparkles className="w-40 h-40 text-emerald-400" />
                 </div>
@@ -517,7 +522,7 @@ export default function PatientDashboard() {
               </div>
 
               {/* HOSPITAL-FIRST BOOKING GATEWAY CARD */}
-              <div className="bg-gradient-to-br from-emerald-900 to-[#0B5A4B] text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-emerald-800">
+              <div className="bg-gradient-to-br from-emerald-900 to-[#0B5A4B] text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-emerald-800 patient-card-3d">
                 <div className="absolute right-0 top-0 p-8 opacity-10 pointer-events-none">
                   <Shield className="w-40 h-40 text-white" />
                 </div>
@@ -610,7 +615,7 @@ export default function PatientDashboard() {
               </div>
 
               {/* Emergency SOS Banner (Rapido style visual "wow") */}
-              <div className="bg-red-500 text-white rounded-3xl p-6 shadow-lg shadow-red-500/20 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border border-red-400">
+              <div className="bg-red-500 text-white rounded-3xl p-6 shadow-lg shadow-red-500/20 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border border-red-400 patient-card-3d">
                 <div className="absolute right-0 top-0 p-8 opacity-10 pointer-events-none">
                   <Ambulance className="w-40 h-44 text-white" />
                 </div>
@@ -1282,10 +1287,10 @@ export default function PatientDashboard() {
                     ) : null}
 
                     {/* Tab Navigation */}
-                    <div className="flex border-b border-slate-200 gap-6">
+                    <div className="flex border-b border-slate-200 gap-6 overflow-x-auto">
                       <button
                         onClick={() => setActiveTab('overview')}
-                        className={`pb-2.5 text-sm font-bold tracking-tight transition-all cursor-pointer ${
+                        className={`pb-2.5 text-sm font-bold tracking-tight transition-all cursor-pointer whitespace-nowrap ${
                           activeTab === 'overview' ? 'border-b-2 border-[#0B5A4B] text-[#0B5A4B]' : 'text-slate-400 hover:text-slate-600'
                         }`}
                       >
@@ -1293,7 +1298,7 @@ export default function PatientDashboard() {
                       </button>
                       <button
                         onClick={() => setActiveTab('doctors')}
-                        className={`pb-2.5 text-sm font-bold tracking-tight transition-all cursor-pointer ${
+                        className={`pb-2.5 text-sm font-bold tracking-tight transition-all cursor-pointer whitespace-nowrap ${
                           activeTab === 'doctors' ? 'border-b-2 border-[#0B5A4B] text-[#0B5A4B]' : 'text-slate-400 hover:text-slate-600'
                         }`}
                       >
@@ -1301,11 +1306,25 @@ export default function PatientDashboard() {
                       </button>
                       <button
                         onClick={() => setActiveTab('costs')}
-                        className={`pb-2.5 text-sm font-bold tracking-tight transition-all cursor-pointer ${
+                        className={`pb-2.5 text-sm font-bold tracking-tight transition-all cursor-pointer whitespace-nowrap ${
                           activeTab === 'costs' ? 'border-b-2 border-[#0B5A4B] text-[#0B5A4B]' : 'text-slate-400 hover:text-slate-600'
                         }`}
                       >
                         Transparency Pricing
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('chat')}
+                        className={`pb-2.5 text-sm font-bold tracking-tight transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                          activeTab === 'chat' ? 'border-b-2 border-[#0B5A4B] text-[#0B5A4B]' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Message Desk</span>
+                        {hospital && messages.filter(m => m.clinicId === hospital.id).length > 0 && (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                            {messages.filter(m => m.clinicId === hospital.id).length}
+                          </span>
+                        )}
                       </button>
                     </div>
 
@@ -1481,6 +1500,97 @@ export default function PatientDashboard() {
                         >
                           Use Cost Estimator Comparison Tool
                         </button>
+                      </div>
+                    )}
+
+                    {activeTab === 'chat' && (
+                      <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900 font-display flex items-center gap-2">
+                              <span>Live Front Desk Messaging</span>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Desk Online
+                              </span>
+                            </h3>
+                            <p className="text-xs text-slate-500">Connected in real-time with {hospital.name} administration</p>
+                          </div>
+                        </div>
+
+                        {/* Messages Thread */}
+                        <div className="max-h-[320px] min-h-[160px] overflow-y-auto space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          {messages.filter(m => m.clinicId === hospital.id).length === 0 ? (
+                            <div className="text-center py-10 text-xs text-slate-400">
+                              <MessageSquare className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+                              <p className="font-semibold">No messages yet with {hospital.name}.</p>
+                              <p className="text-[11px] mt-1 text-slate-400">Type a message below to ask about doctor availability, OPD token status, or hospital facilities.</p>
+                            </div>
+                          ) : (
+                            messages
+                              .filter(m => m.clinicId === hospital.id)
+                              .sort((a, b) => (a.createdAt || a.timestamp || 0) - (b.createdAt || b.timestamp || 0))
+                              .map((msg) => (
+                                <div
+                                  key={msg.id}
+                                  className={`flex flex-col ${msg.from === 'patient' ? 'items-end' : 'items-start'}`}
+                                >
+                                  <div
+                                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs font-medium leading-relaxed ${
+                                      msg.from === 'patient'
+                                        ? 'bg-[#0F8B8D] text-white rounded-br-none shadow-sm'
+                                        : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-sm'
+                                    }`}
+                                  >
+                                    <div className="text-[10px] opacity-75 font-bold mb-0.5">
+                                      {msg.from === 'patient' ? 'You' : `${hospital.name} Desk`}
+                                    </div>
+                                    <div>{msg.text}</div>
+                                  </div>
+                                  <span className="text-[9px] text-slate-400 mt-1 px-1">
+                                    {new Date(msg.createdAt || msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              ))
+                          )}
+                        </div>
+
+                        {/* Send message form */}
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!chatMessageInput.trim() || isSendingMessage) return;
+                            setIsSendingMessage(true);
+                            try {
+                              await sendMessage(hospital.id, hospital.name, chatMessageInput.trim(), 'patient');
+                              setChatMessageInput('');
+                            } catch (err) {
+                              console.error("Failed to send message:", err);
+                            } finally {
+                              setIsSendingMessage(false);
+                            }
+                          }}
+                          className="flex gap-2"
+                        >
+                          <input
+                            type="text"
+                            value={chatMessageInput}
+                            onChange={(e) => setChatMessageInput(e.target.value)}
+                            placeholder={`Type a message to ${hospital.name}...`}
+                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-[#0F8B8D] focus:ring-2 focus:ring-[#0F8B8D]/10"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isSendingMessage || !chatMessageInput.trim()}
+                            className="px-5 py-2.5 bg-[#0F8B8D] hover:bg-[#0c7072] text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 cursor-pointer shadow-sm flex items-center gap-1.5"
+                          >
+                            {isSendingMessage ? (
+                              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <span>Send</span>
+                            )}
+                          </button>
+                        </form>
                       </div>
                     )}
                   </>
