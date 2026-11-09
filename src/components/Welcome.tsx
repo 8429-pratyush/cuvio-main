@@ -57,7 +57,7 @@ export default function Welcome() {
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
   // ----------------------------------------------------------------
-  // PATIENT PORTAL STATES (Phone & reCAPTCHA)
+  // PATIENT PORTAL STATES (Phone OTP)
   // ----------------------------------------------------------------
   const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState(false);
@@ -69,11 +69,6 @@ export default function Welcome() {
   const [verifiedPhone, setVerifiedPhone] = useState<string>('');
   const [billingError, setBillingError] = useState(false);
   const [isDemoSession, setIsDemoSession] = useState(false);
-
-  // Interactive reCAPTCHA states
-  const [isRobotVerified, setIsRobotVerified] = useState(false);
-  const [isVerifyingRobot, setIsVerifyingRobot] = useState(false);
-  const [rememberedPatient, setRememberedPatient] = useState<any>(null);
 
   // Patient registration fields
   const [patientName, setPatientName] = useState('');
@@ -131,23 +126,6 @@ export default function Welcome() {
       }
     } catch (e) {
       console.warn("Recaptcha initialization notice:", e);
-    }
-  }, []);
-
-  // Restore remembered patient details on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('cuvio_remembered_patient');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setRememberedPatient(parsed);
-        if (parsed.phone) {
-          const rawNum = parsed.phone.replace(/\D/g, '').slice(-10);
-          setPhone(rawNum);
-        }
-      }
-    } catch (e) {
-      console.warn("Could not load remembered patient:", e);
     }
   }, []);
 
@@ -406,17 +384,17 @@ export default function Welcome() {
   };
 
   // ================================================================
-  // 3. PATIENT PHONE & RECAPTCHA AUTH HANDLERS
+  // 3. PATIENT PHONE OTP AUTH HANDLERS
   // ================================================================
   const validatePhone = (num: string): boolean => {
     return /^[6-9]\d{9}$/.test(num);
   };
 
-  // Direct Patient Login via Phone & reCAPTCHA Verification
-  const handlePatientDirectLogin = async (e?: React.FormEvent) => {
+  const handleSendOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError('');
     setNoticeMessage(null);
+    setBillingError(false);
 
     const cleanPhone = phone.replace(/\D/g, '');
     if (!validatePhone(cleanPhone)) {
@@ -424,99 +402,118 @@ export default function Welcome() {
       return;
     }
 
-    if (!isRobotVerified) {
-      setError('Please verify the security check (reCAPTCHA) to log in.');
+    if (isDemoModeEnv) {
+      setIsDemoSession(true);
+      setOtpStep(true);
+      setOtpCode('');
+      setResendTimer(30);
+      setNoticeMessage('Demo mode active. Enter test verification code: 123456');
       return;
     }
 
     setLoading(true);
     try {
-      let foundProfile: any = null;
-
-      // 1. Check local storage for this specific phone or remembered patient
-      const localPhone = localStorage.getItem(`cuvio_patient_${cleanPhone}`);
-      const localRemembered = localStorage.getItem('cuvio_remembered_patient');
-      if (localPhone) {
-        try { foundProfile = JSON.parse(localPhone); } catch (e) {}
-      } else if (localRemembered) {
-        try {
-          const parsed = JSON.parse(localRemembered);
-          if ((parsed.phone || '').replace(/\D/g, '').includes(cleanPhone)) {
-            foundProfile = parsed;
-          }
-        } catch (e) {}
+      if (!window.recaptchaVerifier) {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'invisible'
+        });
       }
 
-      // 2. Check Firestore users/pat_{cleanPhone}
-      if (!foundProfile) {
-        try {
-          const snap = await getDoc(doc(db, 'users', `pat_${cleanPhone}`));
-          if (snap.exists()) {
-            foundProfile = snap.data();
-          }
-        } catch (e) {
-          console.warn("Firestore phone lookup warning:", e);
-        }
-      }
-
-      // 3. Check Backend /api/data or /api/patient/profile
-      if (!foundProfile) {
-        try {
-          const res = await fetch('/api/data');
-          if (res.ok) {
-            const data = await res.json();
-            const matchedUser = (data.users || []).find((u: any) => (u.phone || '').replace(/\D/g, '').includes(cleanPhone));
-            if (matchedUser) {
-              foundProfile = matchedUser;
-            }
-          }
-        } catch (e) {}
-      }
-
-      if (foundProfile) {
-        // User profile found! Restore state and log in directly
-        localStorage.setItem('cuvio_user', JSON.stringify(foundProfile));
-        localStorage.setItem('cuvio_remembered_patient', JSON.stringify(foundProfile));
-        localStorage.setItem(`cuvio_patient_${cleanPhone}`, JSON.stringify(foundProfile));
-
-        setUser(foundProfile);
-        setRole('patient');
-        setScreen('dashboard');
-      } else {
-        // Account does not exist yet: suggest Sign Up
-        setError(`No account found for +91 ${cleanPhone}. Please switch to Sign Up to register your profile.`);
-      }
+      const formattedNumber = `+91${cleanPhone}`;
+      const confirmation = await signInWithPhoneNumber(auth, formattedNumber, window.recaptchaVerifier);
+      setConfirmationResult(confirmation);
+      setIsDemoSession(false);
+      setOtpCode('');
+      setOtpStep(true);
+      setResendTimer(30);
     } catch (err: any) {
-      console.error("Patient login error:", err);
-      setError(err?.message || 'Login failed. Please check your network connection.');
+      console.error("Firebase signInWithPhoneNumber error:", err);
+      if (err?.code === 'auth/billing-not-enabled') {
+        setBillingError(true);
+        setError('Firebase SMS gateway is on Spark plan. You can use test code 123456 to continue immediately.');
+      } else if (err?.code === 'auth/too-many-requests') {
+        setError('Too many requests. Please wait a moment or try again later.');
+      } else if (err?.code === 'auth/invalid-phone-number') {
+        setError('Invalid mobile number format. Please check the digits.');
+      } else {
+        setError(err?.message || 'Failed to send SMS OTP. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Direct Patient Sign Up Step (Verify reCAPTCHA & Proceed to Details)
-  const handlePatientSignupProceed = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleVerifyOtp = async (codeToVerify?: string) => {
+    const finalCode = (codeToVerify || otpCode).trim();
+    if (finalCode.length !== 6) {
+      setError('Please enter all 6 digits of the OTP.');
+      return;
+    }
+
     setError('');
-    setNoticeMessage(null);
+    setVerifying(true);
 
-    const cleanPhone = phone.replace(/\D/g, '');
-    if (!validatePhone(cleanPhone)) {
-      setError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
-      return;
+    try {
+      let uid = '';
+      const cleanPhone = phone.replace(/\D/g, '');
+      const finalPhone = `+91 ${cleanPhone}`;
+
+      if (isDemoSession || billingError) {
+        if (finalCode !== '123456') {
+          throw new Error('Invalid test verification code. Use: 123456');
+        }
+        try {
+          const anonCred = await signInAnonymously(auth);
+          uid = anonCred.user.uid;
+        } catch {
+          uid = `demo_patient_${cleanPhone}`;
+        }
+      } else {
+        if (!confirmationResult) {
+          throw new Error('Verification session expired. Please request a new OTP.');
+        }
+        const userCred = await confirmationResult.confirm(finalCode);
+        uid = userCred.user.uid;
+      }
+
+      setVerifiedUid(uid);
+      setVerifiedPhone(finalPhone);
+
+      // Check if user already exists in Firestore users/{uid}
+      let existingProfile: User | null = null;
+      try {
+        const userSnap = await getDoc(doc(db, 'users', uid));
+        if (userSnap.exists()) {
+          existingProfile = userSnap.data() as User;
+        }
+      } catch (e) {
+        console.warn("Firestore user profile fetch warning:", e);
+      }
+
+      if (existingProfile) {
+        setUser(existingProfile);
+        setRole(existingProfile.role as any);
+        setScreen('dashboard');
+      } else {
+        if (authMode === 'login') {
+          setError('Account not found, please Sign Up first');
+          return;
+        }
+        // First-time patient signing up: ask name & profile details once
+        setShowProfileForm(true);
+      }
+    } catch (err: any) {
+      console.error("Firebase OTP confirmation error:", err);
+      if (err?.code === 'auth/invalid-verification-code') {
+        setError('Incorrect OTP. Please check the code and re-enter.');
+      } else {
+        setError(err?.message || 'Verification failed. Please try again.');
+      }
+    } finally {
+      setVerifying(false);
     }
-
-    if (!isRobotVerified) {
-      setError('Please verify the security check (reCAPTCHA) to continue.');
-      return;
-    }
-
-    setVerifiedUid(`pat_${cleanPhone}`);
-    setVerifiedPhone(`+91 ${cleanPhone}`);
-    setShowProfileForm(true);
   };
 
-  // Complete Patient Profile Submission (Clean, Sanitized with NO undefined fields!)
   const handlePatientProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!patientName.trim()) {
@@ -526,61 +523,27 @@ export default function Welcome() {
 
     setLoading(true);
     try {
-      const cleanPhone = phone.replace(/\D/g, '');
-      const targetUid = verifiedUid || `pat_${cleanPhone}` || `pat_${Date.now()}`;
       const now = new Date().toISOString();
+      const targetUid = verifiedUid || auth.currentUser?.uid;
+      if (!targetUid) {
+        throw new Error('Authentication session missing. Please verify phone again.');
+      }
 
-      // Clean profile data structure - GUARANTEED zero undefined fields!
-      const profileData: any = {
-        uid: targetUid,
+      const profileData: PatientProfile = {
         role: 'patient',
-        approved: true,
+        approved: false, // Per rules: role: 'patient', approved: false
         createdAt: now,
-        phone: cleanPhone ? `+91 ${cleanPhone}` : (verifiedPhone || ''),
+        phone: verifiedPhone || (phone ? `+91 ${phone.replace(/\D/g, '')}` : auth.currentUser?.phoneNumber || ''),
         name: patientName.trim(),
         age: parseInt(patientAge) || 28,
-        gender: patientGender || 'Male',
-        insuranceProvider: patientInsurance || 'Niva Bupa (Max Bupa)',
+        gender: patientGender,
+        email: auth.currentUser?.email || undefined,
+        insuranceProvider: patientInsurance,
         sumInsuredRange: '₹5,00,000 - ₹10,00,000'
       };
 
-      if (auth.currentUser?.email) {
-        profileData.email = auth.currentUser.email;
-      }
-
-      // 1. Persist directly to Firestore users/{uid}
-      try {
-        await setDoc(doc(db, 'users', targetUid), profileData);
-      } catch (err: any) {
-        console.warn("Firestore users uid setDoc warning:", err);
-      }
-
-      // 2. Also persist to users/pat_{cleanPhone} so lookup by phone is instant
-      if (cleanPhone) {
-        try {
-          await setDoc(doc(db, 'users', `pat_${cleanPhone}`), profileData);
-        } catch (err: any) {
-          console.warn("Firestore users phone setDoc warning:", err);
-        }
-      }
-
-      // 3. Persist to Backend server /api/patient/profile
-      try {
-        await fetch('/api/patient/profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(profileData)
-        });
-      } catch (err: any) {
-        console.warn("Backend profile sync warning:", err);
-      }
-
-      // 4. Save to localStorage so browser remembers patient permanently
-      localStorage.setItem('cuvio_user', JSON.stringify(profileData));
-      if (cleanPhone) {
-        localStorage.setItem(`cuvio_patient_${cleanPhone}`, JSON.stringify(profileData));
-      }
-      localStorage.setItem('cuvio_remembered_patient', JSON.stringify(profileData));
+      // Persist directly to Firestore users/{uid}
+      await setDoc(doc(db, 'users', targetUid), profileData);
 
       setUser(profileData);
       setRole('patient');
@@ -591,20 +554,6 @@ export default function Welcome() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Optional OTP send fallback
-  const handleSendOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (authMode === 'login') {
-      handlePatientDirectLogin(e);
-    } else {
-      handlePatientSignupProceed(e);
-    }
-  };
-
-  const handleVerifyOtp = async (codeToVerify?: string) => {
-    handlePatientSignupProceed();
   };
 
   const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1262,38 +1211,8 @@ export default function Welcome() {
                     </button>
                   </div>
 
-                  {/* Remembered Patient Quick Login Banner */}
-                  {authMode === 'login' && rememberedPatient && (
-                    <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-3.5 flex items-center justify-between shadow-xs">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-full bg-[#0B5A4B] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                          {rememberedPatient.name ? rememberedPatient.name[0].toUpperCase() : 'P'}
-                        </div>
-                        <div>
-                          <p className="text-xs font-extrabold text-slate-800">
-                            Welcome back, {rememberedPatient.name}!
-                          </p>
-                          <p className="text-[10px] text-slate-500 font-mono">
-                            {rememberedPatient.phone} &bull; Saved Account
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUser(rememberedPatient);
-                          setRole('patient');
-                          setScreen('dashboard');
-                        }}
-                        className="px-3 py-1.5 bg-[#0B5A4B] hover:bg-[#073D33] text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-xs"
-                      >
-                        Log In &rarr;
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Phone & reCAPTCHA Form */}
-                  <form onSubmit={authMode === 'login' ? handlePatientDirectLogin : handlePatientSignupProceed} className="space-y-4">
+                  {/* Phone OTP Form */}
+                  <form onSubmit={handleSendOtp} className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-wider ml-1">
                         Mobile Number
@@ -1315,67 +1234,14 @@ export default function Welcome() {
                           required
                           maxLength={10}
                           value={phone}
-                          onChange={(e) => {
-                            setPhone(e.target.value.replace(/\D/g, ''));
-                            setError('');
-                          }}
+                          onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
                           placeholder="10-digit mobile number"
-                          className="bg-transparent border-none focus:ring-0 w-full text-sm font-semibold text-slate-800 placeholder:text-slate-400 ml-3 outline-none font-mono"
+                          className="bg-transparent border-none focus:ring-0 w-full text-sm font-semibold text-slate-800 placeholder:text-slate-400 ml-3 outline-none"
                         />
                       </div>
                       <p className="text-[11px] text-slate-400 ml-1">
-                        {authMode === 'login' ? 'Direct secure login with verified reCAPTCHA.' : 'Enter your mobile number to register your profile.'}
+                        A real SMS verification code will be sent to your mobile.
                       </p>
-                    </div>
-
-                    {/* Interactive Google reCAPTCHA Verification Box */}
-                    <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl p-3.5 flex items-center justify-between shadow-xs">
-                      <div 
-                        onClick={() => {
-                          if (isRobotVerified) return;
-                          setIsVerifyingRobot(true);
-                          setTimeout(() => {
-                            setIsVerifyingRobot(false);
-                            setIsRobotVerified(true);
-                          }, 600);
-                        }}
-                        className="flex items-center gap-3 cursor-pointer select-none"
-                      >
-                        <div className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
-                          isRobotVerified
-                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
-                            : 'bg-white border-slate-300 hover:border-slate-400'
-                        }`}>
-                          {isVerifyingRobot ? (
-                            <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />
-                          ) : isRobotVerified ? (
-                            <Check className="w-4 h-4 text-white stroke-[3]" />
-                          ) : null}
-                        </div>
-                        <div>
-                          <span className="text-xs font-bold text-slate-800 block">
-                            I'm not a robot
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {isRobotVerified ? '✓ Verified by reCAPTCHA' : 'Click checkbox to verify security check'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col items-center justify-center pl-3 border-l border-slate-200 text-slate-400">
-                        <svg className="w-6 h-6" viewBox="0 0 48 48" fill="none">
-                          <path d="M24 4C12.95 4 4 12.95 4 24C4 35.05 12.95 44 24 44C35.05 44 44 35.05 44 24C44 12.95 35.05 4 24 4Z" fill="#1A73E8" fillOpacity="0.1"/>
-                          <path d="M36 24C36 17.37 30.63 12 24 12V24H36Z" fill="#1A73E8"/>
-                          <path d="M24 24V36C30.63 36 36 30.63 36 24H24Z" fill="#4285F4"/>
-                          <path d="M12 24C12 30.63 17.37 36 24 36V24H12Z" fill="#EA4335"/>
-                        </svg>
-                        <span className="text-[8px] font-bold text-slate-400 tracking-wider">reCAPTCHA</span>
-                        <div className="flex gap-1 text-[7px] text-slate-400">
-                          <span>Privacy</span>
-                          <span>&bull;</span>
-                          <span>Terms</span>
-                        </div>
-                      </div>
                     </div>
 
                     <button
@@ -1387,7 +1253,7 @@ export default function Welcome() {
                         <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <>
-                          <span>{authMode === 'login' ? 'Verify reCAPTCHA & Log In' : 'Proceed to Patient Profile'}</span>
+                          <span>Get OTP & Continue</span>
                           <ArrowRight className="w-4 h-4" />
                         </>
                       )}

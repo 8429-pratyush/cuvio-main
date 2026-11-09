@@ -3,8 +3,7 @@ import { useCuvio } from '../context/CuvioContext';
 import { BookingRequest, Doctor, AmbulanceBooking } from '../types';
 import {
   Calendar, CheckCircle, Clock, AlertTriangle, XCircle, RefreshCw,
-  User, Check, X, ShieldAlert, Award, Power, Sparkles, LogOut, ArrowRight, Ambulance, Bell, Plus, Trash2, MessageSquare,
-  CreditCard, FileText, ShieldCheck, Download, Printer
+  User, Check, X, ShieldAlert, Award, Power, Sparkles, LogOut, ArrowRight, Ambulance, Bell, Plus, Trash2, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import AmbulanceMap from './AmbulanceMap';
@@ -22,7 +21,6 @@ export default function AdminPanel() {
     updateAmbulanceStatus,
     updateHospitalCharges,
     updateHospitalAmbulancePhone,
-    payHospitalSubscription,
     registerHospital,
     registerDriver,
     adminTab,

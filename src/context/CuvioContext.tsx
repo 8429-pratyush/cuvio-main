@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Hospital, Doctor, BookingRequest, AmbulanceBooking, Prescription, User, Driver, UserRole, HospitalProfile, AmbulanceProfile, ChatMessage, HospitalSubscription } from '../types';
+import { Hospital, Doctor, BookingRequest, AmbulanceBooking, Prescription, User, Driver, UserRole, HospitalProfile, AmbulanceProfile, ChatMessage } from '../types';
 import { collection, doc, setDoc, onSnapshot, writeBatch, deleteDoc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -74,13 +74,8 @@ interface CuvioContextType {
     medicine: number;
     icu: number;
     other: number;
+  }) => void;
   updateHospitalAmbulancePhone: (hospitalId: string, phone: string, hotline?: string) => Promise<void>;
-  payHospitalSubscription: (hospitalId: string, paymentData: {
-    paymentMethod: 'Credit Card' | 'Debit Card' | 'Net Banking';
-    cardLast4?: string;
-    bankName?: string;
-    cardholderName?: string;
-  }) => Promise<{ invoiceId: string; validUntil: string }>;
   registerHospital: (hospitalData: {
     id?: string;
     name: string;
@@ -1691,58 +1686,9 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ambulancePhone: cleanPhone,
         ...(cleanHotline ? { emergencyHotline: cleanHotline } : {})
       }, { merge: true });
-  const payHospitalSubscription = async (hospitalId: string, paymentData: {
-    paymentMethod: 'Credit Card' | 'Debit Card' | 'Net Banking';
-    cardLast4?: string;
-    bankName?: string;
-    cardholderName?: string;
-  }) => {
-    const now = new Date();
-    const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const invoiceId = `INV-CUVIO-${now.getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const newSub: HospitalSubscription = {
-      status: 'active',
-      planName: 'Monthly Hospital Enterprise Operating License',
-      monthlyFee: 1000,
-      paymentMethod: paymentData.paymentMethod,
-      cardLast4: paymentData.cardLast4 || '4242',
-      bankName: paymentData.bankName,
-      activatedAt: now.toISOString(),
-      validUntil: expiry.toISOString(),
-      invoiceId
-    };
-
-    setHospitals(prev => {
-      const updatedList = prev.map(h => {
-        if (h.id.toLowerCase() === hospitalId.toLowerCase()) {
-          return {
-            ...h,
-            subscription: newSub
-          };
-        }
-        return h;
-      });
-      localStorage.setItem('cuvio_hospitals', JSON.stringify(updatedList));
-      return updatedList;
-    });
-
-    const targetHosp = hospitals.find(h => h.id.toLowerCase() === hospitalId.toLowerCase());
-    const hospName = targetHosp?.name || hospitalId;
-    setLiveAlert(`💳 ₹1,000 Subscription Payment Confirmed for ${hospName}! License active for 30 days.`);
-
-    try {
-      await setDoc(doc(db, 'hospitals', hospitalId), {
-        subscription: newSub
-      }, { merge: true });
     } catch (err: any) {
-      console.warn("Firestore payHospitalSubscription warning:", err);
+      console.warn("Firestore updateHospitalAmbulancePhone warning:", err);
     }
-
-    return { 
-      invoiceId, 
-      validUntil: expiry.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) 
-    };
   };
 
   const registerHospital = async (hospitalData: {
@@ -1988,7 +1934,6 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateAmbulanceStatus,
       updateHospitalCharges,
       updateHospitalAmbulancePhone,
-      payHospitalSubscription,
       registerHospital,
       issuePrescription,
       addDoctor,

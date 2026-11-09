@@ -383,6 +383,75 @@ export default function PortalGateLanding() {
           </div>
         </section>
 
+        {/* Live Hospital Facilities Showcase Section */}
+        <section id="hospitals" className="mb-16 pt-8 border-t border-[#CBDDDB]/60">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-[#0F8B8D]">
+                Verified Network
+              </span>
+              <h2 className="text-2xl sm:text-4xl font-extrabold font-display text-[#0E2A33] tracking-tight mt-1">
+                Live Hospital Facilities
+              </h2>
+              <p className="text-[#48646C] text-sm sm:text-base mt-1">
+                Real-time queue delays and upfront consult rates across top medical centers.
+              </p>
+            </div>
+            <button
+              onClick={handleOpenPatientPortal}
+              className="text-xs font-bold text-[#0F8B8D] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>View full directory</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {hospitals.slice(0, 4).map((h) => (
+              <div
+                key={h.id}
+                onClick={handleOpenPatientPortal}
+                className="group cursor-pointer rounded-3xl bg-white border border-[#CBDDDB] overflow-hidden shadow-sm hover:shadow-2xl hover:border-[#0F8B8D] hover:-translate-y-2 transition-all duration-300 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="h-40 w-full relative overflow-hidden bg-slate-100">
+                    <img
+                      src={h.image}
+                      alt={h.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute top-2.5 right-2.5 bg-black/70 backdrop-blur-md text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="text-amber-400">★</span>
+                      <span>{h.rating}</span>
+                    </div>
+                    <div className="absolute bottom-2.5 left-2.5 bg-emerald-950/85 backdrop-blur-md text-emerald-300 text-[10px] font-bold px-3 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1.5 shadow">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{h.currentQueueWait} min OPD wait</span>
+                    </div>
+                  </div>
+
+                  <div className="p-5 space-y-2">
+                    <h4 className="font-bold font-display text-base text-[#0E2A33] group-hover:text-[#0F8B8D] transition-colors line-clamp-1">
+                      {h.name}
+                    </h4>
+                    <p className="text-xs text-[#48646C] line-clamp-1">{h.location}</p>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 pt-2 border-t border-slate-100">
+                      <span className="font-bold text-[#0E2A33] text-sm">₹{h.startsAt}</span>
+                      <span className="text-slate-400">OPD consultation</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-5 pt-0">
+                  <div className="w-full py-2.5 bg-slate-50 group-hover:bg-[#0F8B8D] group-hover:text-white text-slate-700 rounded-xl text-xs font-bold text-center transition-colors shadow-sm">
+                    Book OPD Token
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* 4 Steps How it works Section */}
         <section id="how" className="mb-16 pt-8 border-t border-[#CBDDDB]/60">
           <div className="max-w-2xl mb-10">
@@ -508,49 +577,50 @@ export default function PortalGateLanding() {
           </div>
         </section>
 
-        {/* Hospital Ambulance Department Direct Phone Booking & Emergency Hotline */}
-        <section id="emergency" className="rounded-[32px] bg-gradient-to-br from-[#023E8A] via-[#005B8E] to-slate-900 text-white p-8 sm:p-12 mb-16 shadow-xl relative overflow-hidden border border-sky-800/40">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            <div className="lg:col-span-5 space-y-4">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 text-red-200 border border-red-400/30 text-xs font-bold uppercase tracking-wider">
-                <Ambulance className="w-3.5 h-3.5 text-red-300" />
-                Hospital Ambulance Hotlines
+        {/* Emergency Ambulance SOS Flow Banner */}
+        <section id="emergency" className="rounded-[32px] bg-[#8E1F28] text-[#FFF1F0] p-8 sm:p-12 mb-16 shadow-xl relative overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-bold uppercase tracking-wider mb-4">
+                <Ambulance className="w-3.5 h-3.5" />
+                Emergency Response
               </div>
-              <h2 className="text-2xl sm:text-4xl font-extrabold font-display text-white tracking-tight">
-                Direct Hospital Ambulance Dispatch
+              <h2 className="text-2xl sm:text-4xl font-extrabold font-display text-white tracking-tight mb-4">
+                Ambulance, booked once.
               </h2>
-              <p className="text-sky-100 text-sm sm:text-base leading-relaxed">
-                No third-party driver booking delays. Each partner hospital publishes their direct Ambulance Department telephone number and 24/7 Trauma Hotline for 1-tap emergency dispatch.
+              <p className="text-[#FFD9D6] text-base leading-relaxed mb-6">
+                In an emergency, nobody should have to call five phone numbers. Tap once to request, and the hospital dispatches the nearest ambulance immediately with live tracking.
               </p>
-              <div className="pt-3 border-t border-white/10 flex items-center gap-3 text-xs text-sky-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>Verified Direct Hospital Numbers &bull; 24/7 Active Lines</span>
+              <div className="pt-4 border-t border-white/20 text-xs text-[#FFD9D6]">
+                Only verified, registered hospitals appear on Cuvio.
               </div>
             </div>
 
-            {/* Hospital Ambulance Direct Dial List */}
-            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {hospitals.map(h => (
-                <div key={h.id} className="p-4 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 backdrop-blur-md transition-all flex flex-col justify-between gap-3">
-                  <div>
-                    <h5 className="font-bold text-white text-sm line-clamp-1">{h.name}</h5>
-                    <p className="text-[11px] text-sky-200">{h.location}</p>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
-                    <div>
-                      <span className="text-[9px] uppercase font-bold text-sky-300 block">Ambulance Hotline</span>
-                      <span className="text-xs font-mono font-black text-white">{h.ambulancePhone || '+91 40 2360 7777'}</span>
-                    </div>
-                    <a
-                      href={`tel:${(h.ambulancePhone || '+91 40 2360 7777').replace(/\s/g, '')}`}
-                      className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors"
-                    >
-                      <PhoneCall className="w-3.5 h-3.5" />
-                      <span>Call Now</span>
-                    </a>
-                  </div>
-                </div>
-              ))}
+            {/* Step flow */}
+            <div className="space-y-6 relative pl-6 border-l-2 border-white/30">
+              <div className="relative">
+                <div className="absolute -left-[31px] top-1.5 w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-[#8E1F28] shadow" />
+                <h5 className="font-bold text-white text-base">Patient books the ambulance</h5>
+                <p className="text-xs text-[#FFD9D6] mt-0.5">One request, one tap from the patient portal.</p>
+              </div>
+
+              <div className="relative">
+                <div className="absolute -left-[31px] top-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#8E1F28] shadow" />
+                <h5 className="font-bold text-white text-base">Hospital admin assigns a driver</h5>
+                <p className="text-xs text-[#FFD9D6] mt-0.5">The hospital selects available vehicle and driver.</p>
+              </div>
+
+              <div className="relative">
+                <div className="absolute -left-[31px] top-1.5 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#8E1F28] shadow" />
+                <h5 className="font-bold text-white text-base">Driver sees destination & GPS</h5>
+                <p className="text-xs text-[#FFD9D6] mt-0.5">Pickup location, patient phone number, and hospital route.</p>
+              </div>
+
+              <div className="relative">
+                <div className="absolute -left-[31px] top-1.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#8E1F28] shadow" />
+                <h5 className="font-bold text-white text-base">Driver completes trip</h5>
+                <p className="text-xs text-[#FFD9D6] mt-0.5">Hospital is notified and patient arrives safely at triage.</p>
+              </div>
             </div>
           </div>
         </section>
