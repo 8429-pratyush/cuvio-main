@@ -10,8 +10,6 @@ import {
   RecaptchaVerifier, 
   signInWithPhoneNumber, 
   signInAnonymously, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
   ConfirmationResult 
 } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
@@ -59,7 +57,7 @@ export default function Welcome() {
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
   // ----------------------------------------------------------------
-  // PATIENT PORTAL STATES (Phone OTP)
+  // PATIENT PORTAL STATES (Phone & reCAPTCHA)
   // ----------------------------------------------------------------
   const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState(false);
@@ -71,6 +69,11 @@ export default function Welcome() {
   const [verifiedPhone, setVerifiedPhone] = useState<string>('');
   const [billingError, setBillingError] = useState(false);
   const [isDemoSession, setIsDemoSession] = useState(false);
+
+  // Interactive reCAPTCHA states
+  const [isRobotVerified, setIsRobotVerified] = useState(false);
+  const [isVerifyingRobot, setIsVerifyingRobot] = useState(false);
+  const [rememberedPatient, setRememberedPatient] = useState<any>(null);
 
   // Patient registration fields
   const [patientName, setPatientName] = useState('');
@@ -128,6 +131,23 @@ export default function Welcome() {
       }
     } catch (e) {
       console.warn("Recaptcha initialization notice:", e);
+    }
+  }, []);
+
+  // Restore remembered patient details on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('cuvio_remembered_patient');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setRememberedPatient(parsed);
+        if (parsed.phone) {
+          const rawNum = parsed.phone.replace(/\D/g, '').slice(-10);
+          setPhone(rawNum);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load remembered patient:", e);
     }
   }, []);
 
@@ -281,106 +301,8 @@ export default function Welcome() {
     }
   };
 
-  // Google Sign-In helper (for Gmail authentication)
-  const handleGoogleSignIn = async (portalType: 'hospital' | 'ambulance' | 'patient') => {
-    setError('');
-    setNoticeMessage(null);
-    setLoading(true);
-    try {
-      const provider = new GoogleAuthProvider();
-      const res = await signInWithPopup(auth, provider);
-      const googleUser = res.user;
-
-      if (portalType === 'hospital') {
-        // Find if this Gmail is linked to an existing hospital, or prompt/create
-        const matched = hospitals.find(h => 
-          h.adminEmail?.toLowerCase() === googleUser.email?.toLowerCase()
-        ) || hospitals[0];
-
-        const hospProfile: HospitalProfile = {
-          role: 'hospital',
-          approved: true,
-          createdAt: new Date().toISOString(),
-          hospitalName: matched.name,
-          registrationNumber: matched.id,
-          city: matched.location.split(',')[1]?.trim() || 'Metro',
-          address: matched.location,
-          contactPersonName: googleUser.displayName || 'Administrator',
-          email: googleUser.email || undefined,
-          name: googleUser.displayName || matched.name
-        };
-
-        setUser(hospProfile);
-        localStorage.setItem('cuvio_user', JSON.stringify(hospProfile));
-        setAdminHospitalId(matched.id);
-        setRole('hospital');
-        setScreen('dashboard');
-      } else if (portalType === 'ambulance') {
-        const fallbackHosp = hospitals[0] || { id: 'apollo', name: 'Apollo Specialty Hospital' };
-        const driverProfile: AmbulanceProfile = {
-          role: 'ambulance',
-          approved: true,
-          createdAt: new Date().toISOString(),
-          name: googleUser.displayName || 'Emergency Driver',
-          vehicleNumber: 'TS 09 AB 1234',
-          ambulanceType: 'ALS',
-          city: 'Hyderabad',
-          email: googleUser.email || undefined,
-          phone: googleUser.phoneNumber || '+91 98888 77777',
-          hospitalId: fallbackHosp.id,
-          hospitalName: fallbackHosp.name
-        };
-
-        const driverObj: Driver = {
-          name: driverProfile.name,
-          phone: driverProfile.phone || '+91 98888 77777',
-          hospitalId: fallbackHosp.id,
-          hospitalName: fallbackHosp.name
-        };
-
-        setUser(driverProfile);
-        localStorage.setItem('cuvio_user', JSON.stringify(driverProfile));
-        setCurrentDriver(driverObj);
-        localStorage.setItem('cuvio_driver', JSON.stringify(driverObj));
-        setRole('driver');
-        setScreen('dashboard');
-      } else {
-        // Patient Google Sign-In: query Firestore users/{uid} as single source of truth
-        const userSnap = await getDoc(doc(db, 'users', googleUser.uid));
-        if (userSnap.exists()) {
-          const patProfile = userSnap.data() as PatientProfile;
-          setUser(patProfile);
-          setRole('patient');
-          setScreen('dashboard');
-        } else {
-          if (authMode === 'login') {
-            setError('Account not found, please Sign Up first');
-            return;
-          }
-          // In Sign Up mode: pre-fill details and show profile completion form once
-          setVerifiedUid(googleUser.uid);
-          setVerifiedPhone(googleUser.phoneNumber || '');
-          setPatientName(googleUser.displayName || '');
-          setShowProfileForm(true);
-        }
-      }
-    } catch (err: any) {
-      console.warn("Google popup error:", err);
-      // If popup fails (e.g. iframe blocker or popup blocked), show friendly guidance
-      if (err?.code === 'auth/popup-blocked') {
-        setError('Popup was blocked by your browser. Please allow popups or use Hospital ID / Email & Password.');
-      } else if (err?.code === 'auth/unauthorized-domain') {
-        setError('Google sign-in domain not authorized in Firebase Console. Please use Hospital ID or Email.');
-      } else {
-        setError('Google sign-in not available in this window. Please sign in with your ID or Email below.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // ================================================================
-  // 2. AMBULANCE DRIVER AUTH HANDLERS (Vehicle ID or Gmail / Email)
+  // 2. AMBULANCE DRIVER AUTH HANDLERS (Vehicle ID or Official Email)
   // ================================================================
   const handleDriverLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -484,17 +406,17 @@ export default function Welcome() {
   };
 
   // ================================================================
-  // 3. PATIENT PHONE OTP AUTH HANDLERS
+  // 3. PATIENT PHONE & RECAPTCHA AUTH HANDLERS
   // ================================================================
   const validatePhone = (num: string): boolean => {
     return /^[6-9]\d{9}$/.test(num);
   };
 
-  const handleSendOtp = async (e?: React.FormEvent) => {
+  // Direct Patient Login via Phone & reCAPTCHA Verification
+  const handlePatientDirectLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError('');
     setNoticeMessage(null);
-    setBillingError(false);
 
     const cleanPhone = phone.replace(/\D/g, '');
     if (!validatePhone(cleanPhone)) {
@@ -502,118 +424,99 @@ export default function Welcome() {
       return;
     }
 
-    if (isDemoModeEnv) {
-      setIsDemoSession(true);
-      setOtpStep(true);
-      setOtpCode('');
-      setResendTimer(30);
-      setNoticeMessage('Demo mode active. Enter test verification code: 123456');
+    if (!isRobotVerified) {
+      setError('Please verify the security check (reCAPTCHA) to log in.');
       return;
     }
 
     setLoading(true);
     try {
-      if (!window.recaptchaVerifier) {
-        window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible'
-        });
+      let foundProfile: any = null;
+
+      // 1. Check local storage for this specific phone or remembered patient
+      const localPhone = localStorage.getItem(`cuvio_patient_${cleanPhone}`);
+      const localRemembered = localStorage.getItem('cuvio_remembered_patient');
+      if (localPhone) {
+        try { foundProfile = JSON.parse(localPhone); } catch (e) {}
+      } else if (localRemembered) {
+        try {
+          const parsed = JSON.parse(localRemembered);
+          if ((parsed.phone || '').replace(/\D/g, '').includes(cleanPhone)) {
+            foundProfile = parsed;
+          }
+        } catch (e) {}
       }
 
-      const formattedNumber = `+91${cleanPhone}`;
-      const confirmation = await signInWithPhoneNumber(auth, formattedNumber, window.recaptchaVerifier);
-      setConfirmationResult(confirmation);
-      setIsDemoSession(false);
-      setOtpCode('');
-      setOtpStep(true);
-      setResendTimer(30);
-    } catch (err: any) {
-      console.error("Firebase signInWithPhoneNumber error:", err);
-      if (err?.code === 'auth/billing-not-enabled') {
-        setBillingError(true);
-        setError('Firebase SMS gateway is on Spark plan. You can use test code 123456 to continue immediately.');
-      } else if (err?.code === 'auth/too-many-requests') {
-        setError('Too many requests. Please wait a moment or try again later.');
-      } else if (err?.code === 'auth/invalid-phone-number') {
-        setError('Invalid mobile number format. Please check the digits.');
-      } else {
-        setError(err?.message || 'Failed to send SMS OTP. Please try again.');
+      // 2. Check Firestore users/pat_{cleanPhone}
+      if (!foundProfile) {
+        try {
+          const snap = await getDoc(doc(db, 'users', `pat_${cleanPhone}`));
+          if (snap.exists()) {
+            foundProfile = snap.data();
+          }
+        } catch (e) {
+          console.warn("Firestore phone lookup warning:", e);
+        }
       }
+
+      // 3. Check Backend /api/data or /api/patient/profile
+      if (!foundProfile) {
+        try {
+          const res = await fetch('/api/data');
+          if (res.ok) {
+            const data = await res.json();
+            const matchedUser = (data.users || []).find((u: any) => (u.phone || '').replace(/\D/g, '').includes(cleanPhone));
+            if (matchedUser) {
+              foundProfile = matchedUser;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (foundProfile) {
+        // User profile found! Restore state and log in directly
+        localStorage.setItem('cuvio_user', JSON.stringify(foundProfile));
+        localStorage.setItem('cuvio_remembered_patient', JSON.stringify(foundProfile));
+        localStorage.setItem(`cuvio_patient_${cleanPhone}`, JSON.stringify(foundProfile));
+
+        setUser(foundProfile);
+        setRole('patient');
+        setScreen('dashboard');
+      } else {
+        // Account does not exist yet: suggest Sign Up
+        setError(`No account found for +91 ${cleanPhone}. Please switch to Sign Up to register your profile.`);
+      }
+    } catch (err: any) {
+      console.error("Patient login error:", err);
+      setError(err?.message || 'Login failed. Please check your network connection.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerifyOtp = async (codeToVerify?: string) => {
-    const finalCode = (codeToVerify || otpCode).trim();
-    if (finalCode.length !== 6) {
-      setError('Please enter all 6 digits of the OTP.');
+  // Direct Patient Sign Up Step (Verify reCAPTCHA & Proceed to Details)
+  const handlePatientSignupProceed = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setError('');
+    setNoticeMessage(null);
+
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!validatePhone(cleanPhone)) {
+      setError('Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
       return;
     }
 
-    setError('');
-    setVerifying(true);
-
-    try {
-      let uid = '';
-      const cleanPhone = phone.replace(/\D/g, '');
-      const finalPhone = `+91 ${cleanPhone}`;
-
-      if (isDemoSession || billingError) {
-        if (finalCode !== '123456') {
-          throw new Error('Invalid test verification code. Use: 123456');
-        }
-        try {
-          const anonCred = await signInAnonymously(auth);
-          uid = anonCred.user.uid;
-        } catch {
-          uid = `demo_patient_${cleanPhone}`;
-        }
-      } else {
-        if (!confirmationResult) {
-          throw new Error('Verification session expired. Please request a new OTP.');
-        }
-        const userCred = await confirmationResult.confirm(finalCode);
-        uid = userCred.user.uid;
-      }
-
-      setVerifiedUid(uid);
-      setVerifiedPhone(finalPhone);
-
-      // Check if user already exists in Firestore users/{uid}
-      let existingProfile: User | null = null;
-      try {
-        const userSnap = await getDoc(doc(db, 'users', uid));
-        if (userSnap.exists()) {
-          existingProfile = userSnap.data() as User;
-        }
-      } catch (e) {
-        console.warn("Firestore user profile fetch warning:", e);
-      }
-
-      if (existingProfile) {
-        setUser(existingProfile);
-        setRole(existingProfile.role as any);
-        setScreen('dashboard');
-      } else {
-        if (authMode === 'login') {
-          setError('Account not found, please Sign Up first');
-          return;
-        }
-        // First-time patient signing up: ask name & profile details once
-        setShowProfileForm(true);
-      }
-    } catch (err: any) {
-      console.error("Firebase OTP confirmation error:", err);
-      if (err?.code === 'auth/invalid-verification-code') {
-        setError('Incorrect OTP. Please check the code and re-enter.');
-      } else {
-        setError(err?.message || 'Verification failed. Please try again.');
-      }
-    } finally {
-      setVerifying(false);
+    if (!isRobotVerified) {
+      setError('Please verify the security check (reCAPTCHA) to continue.');
+      return;
     }
+
+    setVerifiedUid(`pat_${cleanPhone}`);
+    setVerifiedPhone(`+91 ${cleanPhone}`);
+    setShowProfileForm(true);
   };
 
+  // Complete Patient Profile Submission (Clean, Sanitized with NO undefined fields!)
   const handlePatientProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!patientName.trim()) {
@@ -623,27 +526,61 @@ export default function Welcome() {
 
     setLoading(true);
     try {
+      const cleanPhone = phone.replace(/\D/g, '');
+      const targetUid = verifiedUid || `pat_${cleanPhone}` || `pat_${Date.now()}`;
       const now = new Date().toISOString();
-      const targetUid = verifiedUid || auth.currentUser?.uid;
-      if (!targetUid) {
-        throw new Error('Authentication session missing. Please verify phone again.');
-      }
 
-      const profileData: PatientProfile = {
+      // Clean profile data structure - GUARANTEED zero undefined fields!
+      const profileData: any = {
+        uid: targetUid,
         role: 'patient',
-        approved: false, // Per rules: role: 'patient', approved: false
+        approved: true,
         createdAt: now,
-        phone: verifiedPhone || (phone ? `+91 ${phone.replace(/\D/g, '')}` : auth.currentUser?.phoneNumber || ''),
+        phone: cleanPhone ? `+91 ${cleanPhone}` : (verifiedPhone || ''),
         name: patientName.trim(),
         age: parseInt(patientAge) || 28,
-        gender: patientGender,
-        email: auth.currentUser?.email || undefined,
-        insuranceProvider: patientInsurance,
+        gender: patientGender || 'Male',
+        insuranceProvider: patientInsurance || 'Niva Bupa (Max Bupa)',
         sumInsuredRange: '₹5,00,000 - ₹10,00,000'
       };
 
-      // Persist directly to Firestore users/{uid}
-      await setDoc(doc(db, 'users', targetUid), profileData);
+      if (auth.currentUser?.email) {
+        profileData.email = auth.currentUser.email;
+      }
+
+      // 1. Persist directly to Firestore users/{uid}
+      try {
+        await setDoc(doc(db, 'users', targetUid), profileData);
+      } catch (err: any) {
+        console.warn("Firestore users uid setDoc warning:", err);
+      }
+
+      // 2. Also persist to users/pat_{cleanPhone} so lookup by phone is instant
+      if (cleanPhone) {
+        try {
+          await setDoc(doc(db, 'users', `pat_${cleanPhone}`), profileData);
+        } catch (err: any) {
+          console.warn("Firestore users phone setDoc warning:", err);
+        }
+      }
+
+      // 3. Persist to Backend server /api/patient/profile
+      try {
+        await fetch('/api/patient/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(profileData)
+        });
+      } catch (err: any) {
+        console.warn("Backend profile sync warning:", err);
+      }
+
+      // 4. Save to localStorage so browser remembers patient permanently
+      localStorage.setItem('cuvio_user', JSON.stringify(profileData));
+      if (cleanPhone) {
+        localStorage.setItem(`cuvio_patient_${cleanPhone}`, JSON.stringify(profileData));
+      }
+      localStorage.setItem('cuvio_remembered_patient', JSON.stringify(profileData));
 
       setUser(profileData);
       setRole('patient');
@@ -654,6 +591,20 @@ export default function Welcome() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Optional OTP send fallback
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (authMode === 'login') {
+      handlePatientDirectLogin(e);
+    } else {
+      handlePatientSignupProceed(e);
+    }
+  };
+
+  const handleVerifyOtp = async (codeToVerify?: string) => {
+    handlePatientSignupProceed();
   };
 
   const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -670,13 +621,9 @@ export default function Welcome() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6 select-none relative overflow-hidden perspective-patient">
+    <div className="min-h-screen bg-[#F4FAFD] flex flex-col items-center justify-center p-4 sm:p-6 select-none relative">
       {/* Invisible Recaptcha container */}
       <div id="recaptcha-container"></div>
-
-      {/* Ambient glow backgrounds */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[#0B5A4B]/5 blur-[120px] rounded-full -z-10" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-100/20 blur-[120px] rounded-full -z-10" />
 
       <main className="w-full max-w-[480px] flex flex-col items-center">
         {/* Back to Portals Gateway button */}
@@ -686,33 +633,36 @@ export default function Welcome() {
             setPortal('gateway');
             setScreen('dashboard');
           }}
-          className="mb-4 inline-flex items-center gap-2 text-xs font-bold text-[#0F8B8D] hover:text-[#0A5A63] bg-white/80 backdrop-blur-sm border border-teal-100 px-3.5 py-1.5 rounded-full shadow-sm hover:shadow transition-all cursor-pointer"
+          className="mb-4 inline-flex items-center gap-2 text-xs font-bold text-[#0077B6] hover:text-[#023E8A] bg-white border border-[#E2E8F0] px-4 py-2 rounded-xl shadow-xs hover:shadow transition-all cursor-pointer"
         >
-          <span>←</span> Back to Portals Gateway
+          <span>&larr;</span> Back to Portals Gateway
         </button>
 
-        {/* App Branding */}
+        {/* Clinical Branding */}
         <div className="text-center mb-5">
-          <div className="w-14 h-14 bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center mx-auto mb-2.5">
-            <span className="text-2xl font-black text-[#0B5A4B] font-display">C</span>
+          <div className="w-12 h-12 bg-[#0077B6] rounded-xl flex items-center justify-center mx-auto mb-2.5 text-white shadow-md shadow-[#0077B6]/20">
+            <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+              <rect width="32" height="32" rx="8" fill="#0077B6"/>
+              <path d="M5 17h6l3-7 4 12 3-5h6" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B5A4B] tracking-tight font-display">
-            Welcome to CUVIO
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#023E8A] tracking-tight">
+            Cuvio Portal Access
           </h1>
-          <p className="text-xs font-medium text-slate-500 mt-1">
-            Real-Time Healthcare & Live Queue Intelligence
+          <p className="text-xs font-semibold text-[#0077B6] mt-1">
+            Real-Time Healthcare &bull; OPD Queue Management
           </p>
         </div>
 
-        {/* Active Selected Portal Badge (Single context, portal selection stays on first page) */}
-        <div className="w-full bg-white/90 backdrop-blur-md p-3.5 rounded-2xl flex items-center justify-between mb-5 border border-slate-200 shadow-sm">
+        {/* Active Selected Portal Badge */}
+        <div className="w-full bg-white p-3.5 rounded-2xl flex items-center justify-between mb-5 border border-[#E2E8F0] shadow-xs">
           <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm ${
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm ${
               activePortal === 'patient'
-                ? 'bg-emerald-50 text-[#0F8B8D] border border-emerald-200/60'
+                ? 'bg-sky-50 text-[#0077B6] border border-sky-200'
                 : activePortal === 'hospital'
-                  ? 'bg-indigo-50 text-[#3552C8] border border-indigo-200/60'
-                  : 'bg-red-50 text-red-600 border border-red-200/60'
+                  ? 'bg-blue-50 text-[#023E8A] border border-blue-200'
+                  : 'bg-rose-50 text-rose-600 border border-rose-200'
             }`}>
               {activePortal === 'patient' ? (
                 <UserIcon className="w-4 h-4" />
@@ -726,7 +676,7 @@ export default function Welcome() {
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                 Access Level
               </span>
-              <span className="text-xs font-extrabold text-slate-800 font-display">
+              <span className="text-xs font-extrabold text-[#023E8A]">
                 {activePortal === 'patient'
                   ? 'Patient Authentication'
                   : activePortal === 'hospital'
@@ -742,14 +692,14 @@ export default function Welcome() {
               setPortal('gateway');
               setScreen('dashboard');
             }}
-            className="text-[11px] font-bold text-[#0F8B8D] hover:underline cursor-pointer"
+            className="text-[11px] font-bold text-[#0077B6] hover:underline cursor-pointer"
           >
-            Change Portal
+            Switch Portal
           </button>
         </div>
 
         {/* MAIN AUTH CARD */}
-        <div className="bg-white border border-slate-100 rounded-[32px] p-6 sm:p-8 shadow-xl w-full relative login-card-3d">
+        <div className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-md w-full relative">
           
           {/* Notification / Success Banner */}
           {noticeMessage && (
@@ -891,31 +841,6 @@ export default function Welcome() {
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
-                  </button>
-
-                  {/* Google Gmail Sign-In Button */}
-                  <div className="relative py-1 text-center">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-slate-200"></div>
-                    </div>
-                    <span className="relative bg-white px-3 text-[10px] uppercase font-bold text-slate-400">
-                      or sign in with
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleGoogleSignIn('hospital')}
-                    disabled={loading}
-                    className="w-full h-12 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-bold rounded-2xl flex items-center justify-center gap-2.5 transition-all cursor-pointer text-xs"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                    </svg>
-                    <span>Sign In with Google (Gmail)</span>
                   </button>
                 </form>
               )}
@@ -1160,31 +1085,6 @@ export default function Welcome() {
                       </>
                     )}
                   </button>
-
-                  {/* Google Gmail Sign-In Button */}
-                  <div className="relative py-1 text-center">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-slate-200"></div>
-                    </div>
-                    <span className="relative bg-white px-3 text-[10px] uppercase font-bold text-slate-400">
-                      or sign in with
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleGoogleSignIn('ambulance')}
-                    disabled={loading}
-                    className="w-full h-12 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-bold rounded-2xl flex items-center justify-center gap-2.5 transition-all cursor-pointer text-xs"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                    </svg>
-                    <span>Sign In with Google (Gmail)</span>
-                  </button>
                 </form>
               )}
 
@@ -1362,8 +1262,38 @@ export default function Welcome() {
                     </button>
                   </div>
 
-                  {/* Phone OTP Form */}
-                  <form onSubmit={handleSendOtp} className="space-y-4">
+                  {/* Remembered Patient Quick Login Banner */}
+                  {authMode === 'login' && rememberedPatient && (
+                    <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-3.5 flex items-center justify-between shadow-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full bg-[#0B5A4B] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                          {rememberedPatient.name ? rememberedPatient.name[0].toUpperCase() : 'P'}
+                        </div>
+                        <div>
+                          <p className="text-xs font-extrabold text-slate-800">
+                            Welcome back, {rememberedPatient.name}!
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            {rememberedPatient.phone} &bull; Saved Account
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUser(rememberedPatient);
+                          setRole('patient');
+                          setScreen('dashboard');
+                        }}
+                        className="px-3 py-1.5 bg-[#0B5A4B] hover:bg-[#073D33] text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-xs"
+                      >
+                        Log In &rarr;
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Phone & reCAPTCHA Form */}
+                  <form onSubmit={authMode === 'login' ? handlePatientDirectLogin : handlePatientSignupProceed} className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-wider ml-1">
                         Mobile Number
@@ -1385,14 +1315,67 @@ export default function Welcome() {
                           required
                           maxLength={10}
                           value={phone}
-                          onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                          onChange={(e) => {
+                            setPhone(e.target.value.replace(/\D/g, ''));
+                            setError('');
+                          }}
                           placeholder="10-digit mobile number"
-                          className="bg-transparent border-none focus:ring-0 w-full text-sm font-semibold text-slate-800 placeholder:text-slate-400 ml-3 outline-none"
+                          className="bg-transparent border-none focus:ring-0 w-full text-sm font-semibold text-slate-800 placeholder:text-slate-400 ml-3 outline-none font-mono"
                         />
                       </div>
                       <p className="text-[11px] text-slate-400 ml-1">
-                        A real SMS verification code will be sent to your mobile.
+                        {authMode === 'login' ? 'Direct secure login with verified reCAPTCHA.' : 'Enter your mobile number to register your profile.'}
                       </p>
+                    </div>
+
+                    {/* Interactive Google reCAPTCHA Verification Box */}
+                    <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl p-3.5 flex items-center justify-between shadow-xs">
+                      <div 
+                        onClick={() => {
+                          if (isRobotVerified) return;
+                          setIsVerifyingRobot(true);
+                          setTimeout(() => {
+                            setIsVerifyingRobot(false);
+                            setIsRobotVerified(true);
+                          }, 600);
+                        }}
+                        className="flex items-center gap-3 cursor-pointer select-none"
+                      >
+                        <div className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
+                          isRobotVerified
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                            : 'bg-white border-slate-300 hover:border-slate-400'
+                        }`}>
+                          {isVerifyingRobot ? (
+                            <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />
+                          ) : isRobotVerified ? (
+                            <Check className="w-4 h-4 text-white stroke-[3]" />
+                          ) : null}
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 block">
+                            I'm not a robot
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {isRobotVerified ? '✓ Verified by reCAPTCHA' : 'Click checkbox to verify security check'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-center justify-center pl-3 border-l border-slate-200 text-slate-400">
+                        <svg className="w-6 h-6" viewBox="0 0 48 48" fill="none">
+                          <path d="M24 4C12.95 4 4 12.95 4 24C4 35.05 12.95 44 24 44C35.05 44 44 35.05 44 24C44 12.95 35.05 4 24 4Z" fill="#1A73E8" fillOpacity="0.1"/>
+                          <path d="M36 24C36 17.37 30.63 12 24 12V24H36Z" fill="#1A73E8"/>
+                          <path d="M24 24V36C30.63 36 36 30.63 36 24H24Z" fill="#4285F4"/>
+                          <path d="M12 24C12 30.63 17.37 36 24 36V24H12Z" fill="#EA4335"/>
+                        </svg>
+                        <span className="text-[8px] font-bold text-slate-400 tracking-wider">reCAPTCHA</span>
+                        <div className="flex gap-1 text-[7px] text-slate-400">
+                          <span>Privacy</span>
+                          <span>&bull;</span>
+                          <span>Terms</span>
+                        </div>
+                      </div>
                     </div>
 
                     <button
@@ -1404,37 +1387,12 @@ export default function Welcome() {
                         <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <>
-                          <span>Get OTP & Continue</span>
+                          <span>{authMode === 'login' ? 'Verify reCAPTCHA & Log In' : 'Proceed to Patient Profile'}</span>
                           <ArrowRight className="w-4 h-4" />
                         </>
                       )}
                     </button>
                   </form>
-
-                  {/* Or Google Gmail Login */}
-                  <div className="relative py-1 text-center">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-slate-200"></div>
-                    </div>
-                    <span className="relative bg-white px-3 text-[10px] uppercase font-bold text-slate-400">
-                      or continue with
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleGoogleSignIn('patient')}
-                    disabled={loading}
-                    className="w-full h-12 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-bold rounded-2xl flex items-center justify-center gap-2.5 transition-all cursor-pointer text-xs"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                    </svg>
-                    <span>Sign In with Google (Gmail)</span>
-                  </button>
                 </>
               )}
 

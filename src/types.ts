@@ -15,6 +15,8 @@ export interface Hospital {
   specialties: string[];
   adminEmail?: string;
   adminPassword?: string;
+  ambulancePhone?: string;
+  emergencyHotline?: string;
   charges?: {
     consultation: number;
     ambulanceBasic: number;
@@ -26,7 +28,21 @@ export interface Hospital {
     icu: number;
     other: number;
   };
+  subscription?: HospitalSubscription;
 }
+
+export interface HospitalSubscription {
+  status: 'active' | 'pending' | 'expired';
+  planName: string;
+  monthlyFee: number;
+  paymentMethod: 'Credit Card' | 'Debit Card' | 'Net Banking';
+  cardLast4?: string;
+  bankName?: string;
+  activatedAt: string;
+  validUntil: string;
+  invoiceId: string;
+}
+
 
 export interface Doctor {
   id: string;

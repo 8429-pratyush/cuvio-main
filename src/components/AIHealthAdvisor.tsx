@@ -5,7 +5,7 @@ import {
   HelpCircle, DollarSign, Clock, Building2,
   Ambulance, ArrowRight, Activity, ShieldCheck, Heart,
   RefreshCw, FileText, Zap, TrendingDown, Check, X, Ticket,
-  UserCheck, Timer, ChevronRight, History
+  UserCheck, Timer, ChevronRight, History, Send, MessageSquare, Bot, PhoneCall
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Medical3DVitalModel from './Medical3DVitalModel';
@@ -33,11 +33,24 @@ export default function AIHealthAdvisor({
     fetchPatientConsultations
   } = useCuvio();
 
-  // Active Tab: 'consult' | 'cost' | '3d'
-  const [activeTab, setActiveTab] = useState<'consult' | 'cost' | '3d'>('consult');
+  // Active Tab: 'assistant' | 'consult' | 'cost' | '3d'
+  const [activeTab, setActiveTab] = useState<'assistant' | 'consult' | 'cost' | '3d'>('assistant');
 
   // Sub-view in Consult: 'all' | 'care' | 'diagnostics' | 'cost'
   const [consultPerspective, setConsultPerspective] = useState<'all' | 'care' | 'diagnostics' | 'cost'>('all');
+
+  // ---------------------------------------------------------
+  // FORM & CHAT STATES: AI HEALTH & APP ASSISTANT
+  // ---------------------------------------------------------
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'assistant'; text: string; time: string; specialty?: string }>>([
+    {
+      sender: 'assistant',
+      text: "Hello! I am Cuvio's AI Health & App Assistant. I can help analyze your health symptoms, advise on medical specialties, and guide you on using the Cuvio app (booking tokens, checking queue wait times, or finding hospital ambulance department numbers). How can I assist you today?",
+      time: 'Just now'
+    }
+  ]);
 
   // ---------------------------------------------------------
   // FORM STATES: HEALTH CONSULT
@@ -512,6 +525,65 @@ export default function AIHealthAdvisor({
     }
   };
 
+  // Handle Chat for Patient Health & Cuvio App Assistant
+  const handleSendChatMessage = async (presetText?: string) => {
+    const textToSend = (presetText || chatInput).trim();
+    if (!textToSend || isChatLoading) return;
+
+    const userMsg = {
+      sender: 'user' as const,
+      text: textToSend,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setIsChatLoading(true);
+
+    try {
+      const res = await fetch('/api/ai/patient-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: textToSend })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.reply) {
+          setChatMessages(prev => [
+            ...prev,
+            {
+              sender: 'assistant',
+              text: data.reply,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
+          ]);
+          return;
+        }
+      }
+
+      setChatMessages(prev => [
+        ...prev,
+        {
+          sender: 'assistant',
+          text: "I am Cuvio's specialized Health & App Assistant. I can assist with symptoms, recommending medical specialties, hospital ambulance department numbers, and booking OPD tokens. For any acute emergencies, please call your hospital ambulance hotline directly.",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } catch (e) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          sender: 'assistant',
+          text: "I can help analyze your health symptoms and guide you through Cuvio's queue tokens and hospital ambulance numbers. How can I assist with your health or the app today?",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
   // Auto-run if initial symptom was passed
   React.useEffect(() => {
     if (initialSymptom && !consultResult && !isConsulting) {
@@ -562,6 +634,19 @@ export default function AIHealthAdvisor({
 
         {/* Feature Navigation Tabs */}
         <div className="flex flex-wrap items-center gap-2 mt-6 pt-3 border-t border-emerald-700/40">
+          <button
+            onClick={() => setActiveTab('assistant')}
+            className={`px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'assistant'
+                ? 'bg-white text-[#0B5A4B] shadow-md font-extrabold'
+                : 'bg-emerald-950/60 text-emerald-100 hover:bg-emerald-900/60'
+            }`}
+          >
+            <Bot className="w-4 h-4 text-emerald-300" />
+            <span>AI Health & App Assistant</span>
+            <span className="text-[9px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 px-1.5 py-0.5 rounded font-black">AI 2026</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('consult')}
             className={`px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
@@ -623,6 +708,154 @@ export default function AIHealthAdvisor({
 
       {/* Main Body */}
       <div className="p-4 sm:p-7 space-y-6">
+
+        {/* ======================================================== */}
+        {/* TAB 0: ENHANCED AI HEALTH & CUVIO APP ASSISTANT (CHAT)  */}
+        {/* ======================================================== */}
+        {activeTab === 'assistant' && (
+          <div className="space-y-4">
+            {/* Domain Guidelines Banner */}
+            <div className="bg-gradient-to-r from-emerald-50 via-sky-50 to-emerald-50 border border-emerald-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#0B5A4B] text-white flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-800 text-sm">
+                    Patient Health & Cuvio App Dedicated AI
+                  </h4>
+                  <p className="text-slate-600 text-xs mt-0.5">
+                    Strictly focused on symptoms evaluation, medical specialties, hospital ambulance hotlines, and booking tokens.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-emerald-200 text-[#0B5A4B] font-bold text-[11px]">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Clinical Guardrails
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Prompt Chips */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Quick Health & App Questions:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  "Where can I find hospital ambulance department phone numbers?",
+                  "How do I book an OPD token without waiting in line?",
+                  "What specialist doctor should I see for persistent joint pain?",
+                  "What are emergency red flags for chest tightness?",
+                  "How do live queue wait times work in Cuvio?"
+                ].map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSendChatMessage(chip)}
+                    className="text-xs bg-slate-50 hover:bg-emerald-50 hover:text-[#0B5A4B] border border-slate-200 hover:border-emerald-300 text-slate-700 px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer text-left"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Chat Messages Container */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 sm:p-5 h-96 overflow-y-auto space-y-3 flex flex-col">
+              {chatMessages.map((msg, idx) => {
+                const isAssistant = msg.sender === 'assistant';
+                return (
+                  <div
+                    key={idx}
+                    className={`flex gap-3 max-w-[85%] ${isAssistant ? 'self-start' : 'self-end flex-row-reverse'}`}
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center font-bold text-xs ${
+                        isAssistant
+                          ? 'bg-[#0B5A4B] text-white shadow-xs'
+                          : 'bg-slate-800 text-white shadow-xs'
+                      }`}
+                    >
+                      {isAssistant ? <Bot className="w-4 h-4 text-emerald-300" /> : <UserCheck className="w-4 h-4" />}
+                    </div>
+
+                    <div
+                      className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed ${
+                        isAssistant
+                          ? 'bg-white text-slate-800 border border-slate-200/90 shadow-sm'
+                          : 'bg-[#0B5A4B] text-white shadow-sm'
+                      }`}
+                    >
+                      <div className="whitespace-pre-line">{msg.text}</div>
+                      <div
+                        className={`text-[10px] mt-2 font-medium ${
+                          isAssistant ? 'text-slate-400' : 'text-emerald-200'
+                        }`}
+                      >
+                        {msg.time}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {isChatLoading && (
+                <div className="flex gap-3 max-w-[80%] self-start">
+                  <div className="w-8 h-8 rounded-xl shrink-0 bg-[#0B5A4B] text-white flex items-center justify-center">
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-300" />
+                  </div>
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 text-xs text-slate-600 shadow-sm flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                    <span>Analyzing clinical guidelines & app knowledge...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Chat Input Bar */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendChatMessage();
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Ask about your health symptoms, medical specialties, or how to use Cuvio..."
+                className="flex-1 h-12 px-4 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#0B5A4B] focus:ring-4 focus:ring-[#0B5A4B]/5 transition-all font-medium"
+              />
+              <button
+                type="submit"
+                disabled={isChatLoading || !chatInput.trim()}
+                className="h-12 px-5 bg-[#0B5A4B] hover:bg-[#073D33] active:scale-95 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-40"
+              >
+                <span>Send</span>
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </form>
+
+            {/* Quick Action Bridge to Official Token */}
+            <div className="bg-emerald-50/70 border border-emerald-200/60 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <span className="text-slate-700 font-medium">
+                Ready to consult a doctor right away? Generate an autonomous triage queue token.
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('consult')}
+                className="px-3 py-1.5 bg-[#0B5A4B] hover:bg-[#073D33] text-white font-bold rounded-lg text-xs transition-all shrink-0 cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+              >
+                <span>Health Triage & Token</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ======================================================== */}
         {/* TAB 1: HEALTH CONSULTATION & IMMEDIATE CARE ACTION PLAN */}

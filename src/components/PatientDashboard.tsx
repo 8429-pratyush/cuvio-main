@@ -1200,6 +1200,23 @@ export default function PatientDashboard() {
                             )}
                           </div>
 
+                          {/* Hospital Ambulance Department Hotline */}
+                          <div className="flex items-center justify-between bg-red-50/80 border border-red-150 rounded-xl px-3 py-2 text-xs">
+                            <div className="flex items-center gap-1.5 text-red-900">
+                              <Ambulance className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                              <span className="text-[11px] font-semibold text-slate-700">Ambulance Dept:</span>
+                              <span className="font-mono font-bold text-red-700">{hospital.ambulancePhone || '+91 40 2360 7777'}</span>
+                            </div>
+                            <a
+                              href={`tel:${(hospital.ambulancePhone || '+91 40 2360 7777').replace(/\s/g, '')}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-red-600 hover:bg-red-700 px-2.5 py-1 rounded-lg transition-colors shadow-xs"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Phone className="w-3 h-3" />
+                              <span>Call</span>
+                            </a>
+                          </div>
+
                           {/* Select Button */}
                           <button
                             onClick={() => {
@@ -3059,6 +3076,24 @@ export default function PatientDashboard() {
           <span className="text-[10px] font-bold mt-1">Profile</span>
         </button>
       </footer>
+
+      {/* Simple Floating AI Assistant Button Below the Page */}
+      <button
+        type="button"
+        onClick={() => setShowAiAdvisorModal(true)}
+        className="fixed bottom-20 md:bottom-7 right-5 z-40 group flex items-center gap-2.5 bg-[#0077B6] hover:bg-[#023E8A] text-white p-3.5 sm:px-4 sm:py-3 rounded-full shadow-xl shadow-[#0077B6]/30 hover:shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer border border-white/20"
+        title="Ask Cuvio AI - Health & App Assistant"
+        aria-label="Ask Cuvio AI"
+      >
+        <div className="relative flex items-center justify-center">
+          <Sparkles className="w-5 h-5 text-cyan-200" />
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#0077B6] animate-ping" />
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#0077B6]" />
+        </div>
+        <span className="hidden sm:inline text-xs font-bold font-sans tracking-wide">
+          Ask Cuvio AI
+        </span>
+      </button>
 
       {/* Full Screen AI Health & Cost Advisor Modal */}
       {showAiAdvisorModal && (

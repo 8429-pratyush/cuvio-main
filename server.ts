@@ -908,6 +908,63 @@ Return ONLY valid JSON. No markdown code blocks, no backticks.`;
     }
   });
 
+  // API Route: Enhanced Patient Health & App Assistant Chat
+  app.post("/api/ai/patient-chat", async (req, res) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ error: "Message required" });
+      }
+
+      const systemInstruction = `You are Cuvio's specialized AI Health & App Assistant, helping patients in India navigate healthcare and the Cuvio platform.
+
+STRICT DOMAIN BOUNDARIES:
+1. PATIENT HEALTH: Help patients understand symptoms, suggest appropriate medical specialties (e.g. Cardiology, Orthopedics, Neurology, Pediatrics, ENT, Dermatology, Gastroenterology, Ophthalmology), evaluate emergency red flags, provide safe non-pharmacological supportive at-home care, and recommend questions to ask doctors during consultation.
+2. CUVIO APP GUIDANCE: Help patients use the Cuvio app — how to book OPD tokens without waiting in line, how to check live queue wait times, how to compare upfront hospital tariffs, and how to contact the hospital ambulance department.
+3. NON-HEALTH / UNRELATED TOPICS: If a user asks about anything outside health or the Cuvio healthcare app (e.g. general trivia, coding, politics, movies, cooking, stock trading), politely refuse:
+"I am Cuvio's specialized Health & App Assistant. I can only assist with your health concerns, symptoms, medical specialty guidance, and using the Cuvio healthcare platform."
+
+RESPONSE GUIDELINES:
+- Warm, concise, reassuring, and clinically professional.
+- Use simple bullet points for clarity.
+- When an emergency is suspected, immediately advise seeking emergency medical care or calling the hospital ambulance hotline.
+- End health answers with a brief disclaimer: "This guidance assists with triage and hospital selection. Always consult a licensed medical doctor for clinical diagnosis."`;
+
+      const prompt = `Patient query: "${message}"\n\nProvide a structured, helpful response following your strict Health & App domain guidelines.`;
+      const aiText = await callGemini(prompt, systemInstruction);
+
+      if (aiText) {
+        return res.json({ status: "success", reply: aiText });
+      }
+
+      // High quality clinical rule-based fallback if offline/timeout
+      const lower = message.toLowerCase();
+      let reply = "";
+      if (lower.includes("queue") || lower.includes("token") || lower.includes("wait")) {
+        reply = "In Cuvio, you can book an OPD token from home without waiting in lines. Go to the Hospitals section, select your doctor, and book your visit. Your live token will appear with real-time wait estimation and update automatically as the doctor sees each patient.";
+      } else if (lower.includes("ambulance") || lower.includes("emergency") || lower.includes("hotline")) {
+        reply = "For emergency ambulance dispatch, each verified hospital on Cuvio has a direct Ambulance Department Number listed under the hospital details. You can call the hospital ambulance department directly with 1 tap or dial emergency 108.";
+      } else if (lower.includes("cost") || lower.includes("fee") || lower.includes("price") || lower.includes("tariff")) {
+        reply = "Cuvio provides 100% upfront pricing transparency. You can see doctor consultation fees, diagnostic test rates, and surgical procedure cost breakdowns across Government, Private, and Corporate hospital tiers before booking.";
+      } else if (lower.includes("chest") || lower.includes("heart") || lower.includes("breath")) {
+        reply = "⚠️ Clinical Priority: Chest tightness or breathing difficulty requires immediate emergency medical attention. Please proceed to the nearest Emergency Room or contact your hospital's ambulance department immediately.";
+      } else if (lower.includes("knee") || lower.includes("joint") || lower.includes("bone") || lower.includes("back") || lower.includes("spine")) {
+        reply = "For joint or bone pain, an Orthopedics specialist is recommended. Avoid strenuous weight-bearing, apply a gentle warm compress, and book an OPD token with an Orthopedic surgeon on Cuvio.";
+      } else if (lower.includes("headache") || lower.includes("migraine")) {
+        reply = "For persistent severe headaches, consulting a Neurologist or General Physician is advised. Rest in a quiet, dark room, stay hydrated with electrolytes, and seek emergency care if you experience sudden numbness, speech difficulty, or visual aura.";
+      } else if (lower.includes("stomach") || lower.includes("acid") || lower.includes("cramp")) {
+        reply = "For abdominal pain or acidity, consulting a Gastroenterologist is recommended. Sip lukewarm water, avoid spicy/greasy foods, and consult a doctor if severe vomiting or localized right-lower pain occurs.";
+      } else {
+        reply = "I am Cuvio's specialized Health & App Assistant. I can help analyze your health symptoms, recommend medical specialties, and guide you on booking OPD tokens and checking hospital tariffs in Cuvio. How can I assist you today?";
+      }
+
+      res.json({ status: "success", reply });
+    } catch (err: any) {
+      console.error("Patient chat assistant error:", err);
+      res.status(500).json({ error: "Failed to process chat", details: err.message });
+    }
+  });
+
   // API Route: Server health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", backend: "Cuvio Express Engine", gemini: "active" });

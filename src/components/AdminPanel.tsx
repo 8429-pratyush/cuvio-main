@@ -3,7 +3,8 @@ import { useCuvio } from '../context/CuvioContext';
 import { BookingRequest, Doctor, AmbulanceBooking } from '../types';
 import {
   Calendar, CheckCircle, Clock, AlertTriangle, XCircle, RefreshCw,
-  User, Check, X, ShieldAlert, Award, Power, Sparkles, LogOut, ArrowRight, Ambulance, Bell, Plus, Trash2, MessageSquare
+  User, Check, X, ShieldAlert, Award, Power, Sparkles, LogOut, ArrowRight, Ambulance, Bell, Plus, Trash2, MessageSquare,
+  CreditCard, FileText, ShieldCheck, Download, Printer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import AmbulanceMap from './AmbulanceMap';
@@ -20,6 +21,8 @@ export default function AdminPanel() {
     updateDoctorStatus,
     updateAmbulanceStatus,
     updateHospitalCharges,
+    updateHospitalAmbulancePhone,
+    payHospitalSubscription,
     registerHospital,
     registerDriver,
     adminTab,
@@ -49,6 +52,18 @@ export default function AdminPanel() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
+
+  // Hospital Ambulance Department Hotline States
+  const [hospAmbulancePhone, setHospAmbulancePhone] = useState(activeHosp?.ambulancePhone || '+91 40 2360 7777');
+  const [hospHotline, setHospHotline] = useState(activeHosp?.emergencyHotline || '1066');
+  const [isSavingAmbulancePhone, setIsSavingAmbulancePhone] = useState(false);
+
+  useEffect(() => {
+    if (activeHosp) {
+      setHospAmbulancePhone(activeHosp.ambulancePhone || '+91 40 2360 7777');
+      setHospHotline(activeHosp.emergencyHotline || '1066');
+    }
+  }, [activeHosp]);
 
   // Hospital Rates States
   const [editHospitalId, setEditHospitalId] = useState('');
@@ -795,6 +810,98 @@ export default function AdminPanel() {
               <div>
                 <h2 className="text-lg font-bold text-white font-display">Real-Time Emergency SOS alerts</h2>
                 <p className="text-xs text-slate-400">Blinking distress alerts synchronized with active patient GPS triggers. Approve dispatches immediately.</p>
+              </div>
+
+              {/* HOSPITAL AMBULANCE DEPARTMENT NUMBER & HOTLINE CONFIGURATION */}
+              <div className="bg-gradient-to-r from-red-950/40 via-slate-950 to-slate-950 border border-red-900/60 rounded-3xl p-6 shadow-xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-red-600 text-white flex items-center justify-center font-bold shadow-md">
+                      <Ambulance className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-white uppercase tracking-wider font-display">
+                        Hospital Ambulance Department Contact
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Official ambulance dispatch contact for {displayHospitalName}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] bg-red-500/20 text-red-300 border border-red-500/40 px-3 py-1 rounded-full font-bold uppercase tracking-wider self-start sm:self-auto">
+                    Patient 1-Tap Dialing Active
+                  </span>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!hospAmbulancePhone.trim()) {
+                      setToastMessage("⚠️ Please provide a valid phone number.");
+                      setTimeout(() => setToastMessage(null), 3000);
+                      return;
+                    }
+                    setIsSavingAmbulancePhone(true);
+                    try {
+                      await updateHospitalAmbulancePhone(activeHosp.id, hospAmbulancePhone.trim(), hospHotline.trim());
+                      setToastMessage(`✓ Ambulance Department contact updated for ${activeHosp.name}! Patients can now call ${hospAmbulancePhone}.`);
+                      setTimeout(() => setToastMessage(null), 5000);
+                    } catch (err: any) {
+                      setToastMessage(`❌ Failed to update ambulance department: ${err.message || 'Error'}`);
+                      setTimeout(() => setToastMessage(null), 5000);
+                    } finally {
+                      setIsSavingAmbulancePhone(false);
+                    }
+                  }}
+                  className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end"
+                >
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      Ambulance Department Direct Number
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={hospAmbulancePhone}
+                      onChange={(e) => setHospAmbulancePhone(e.target.value)}
+                      placeholder="+91 40 2360 7777"
+                      className="w-full h-11 px-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono font-bold text-white placeholder:text-slate-500 focus:outline-none focus:border-red-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      24/7 Trauma Hotline Extension
+                    </label>
+                    <input
+                      type="text"
+                      value={hospHotline}
+                      onChange={(e) => setHospHotline(e.target.value)}
+                      placeholder="1066 (24/7 Trauma)"
+                      className="w-full h-11 px-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono font-bold text-white placeholder:text-slate-500 focus:outline-none focus:border-red-500 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={isSavingAmbulancePhone}
+                      className="w-full h-11 bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+                    >
+                      {isSavingAmbulancePhone ? (
+                        <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                      ) : (
+                        <Check className="w-4 h-4 text-white" />
+                      )}
+                      <span>Save Ambulance Dept Number</span>
+                    </button>
+                  </div>
+                </form>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  💡 This verified telephone number appears automatically on patient hospital cards, landing page emergency directories, and is provided by the Cuvio AI Assistant whenever patients ask for emergency ambulance contact.
+                </p>
               </div>
 
               {/* GRID CONTAINER FOR DISPATCH & REGISTRATION */}

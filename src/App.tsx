@@ -4,7 +4,6 @@ import Splash from './components/Splash';
 import Onboarding from './components/Onboarding';
 import Welcome from './components/Welcome';
 import PortalGateLanding from './components/PortalGateLanding';
-import RoleSwitcher from './components/RoleSwitcher';
 import WaitingForApproval from './components/WaitingForApproval';
 import { auth, firebaseConfigError } from './lib/firebase';
 import { Bell, X, Building2, Users, Ambulance, ArrowLeft } from 'lucide-react';
@@ -78,17 +77,16 @@ function AppContent() {
     return <Onboarding />;
   }
 
-  // 2. Gateway Landing Page (matches Cuvio – Don't wait in line and cuvio-app.html #gate)
-  if (portal === 'gateway') {
+  // 2. Explicit Authentication Screen (Always opens immediately when currentScreen === 'login')
+  if (currentScreen === 'login') {
     return (
-      <div className="min-h-screen relative">
-        <PortalGateLanding />
-        <RoleSwitcher />
+      <div className="min-h-screen relative bg-[#F4FAFD]">
+        <Welcome />
         
         {/* Floating Live Realtime Alert Toast */}
         {liveAlert && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#0E2A33] text-white px-5 py-3 rounded-2xl shadow-2xl border border-teal-500/50 flex items-center gap-3 animate-bounce max-w-[90vw]">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#023E8A] text-white px-5 py-3 rounded-2xl shadow-2xl border border-[#0077B6]/50 flex items-center gap-3 animate-bounce max-w-[90vw]">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse shrink-0" />
             <span className="text-xs sm:text-sm font-semibold">{liveAlert}</span>
             <button 
               onClick={dismissLiveAlert} 
@@ -102,18 +100,41 @@ function AppContent() {
     );
   }
 
-  // 3. User Authentication Check for Specific Portals
-  const isLoggedIn = Boolean(user || auth.currentUser);
-
-  if (currentScreen === 'login' || !isLoggedIn) {
+  // 3. Gateway Landing Page (matches Cuvio portals gateway)
+  if (portal === 'gateway') {
     return (
       <div className="min-h-screen relative">
+        <PortalGateLanding />
+        
+        {/* Floating Live Realtime Alert Toast */}
+        {liveAlert && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#023E8A] text-white px-5 py-3 rounded-2xl shadow-2xl border border-[#0077B6]/50 flex items-center gap-3 animate-bounce max-w-[90vw]">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse shrink-0" />
+            <span className="text-xs sm:text-sm font-semibold">{liveAlert}</span>
+            <button 
+              onClick={dismissLiveAlert} 
+              className="text-xs bg-white/20 hover:bg-white/30 text-white w-5 h-5 rounded-full flex items-center justify-center font-bold ml-2 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 4. User Authentication Check for Specific Portals
+  const isLoggedIn = Boolean(user || auth.currentUser);
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen relative bg-[#F4FAFD]">
         <Welcome />
         
         {/* Floating Live Realtime Alert Toast */}
         {liveAlert && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#0E2A33] text-white px-5 py-3 rounded-2xl shadow-2xl border border-teal-500/50 flex items-center gap-3 animate-bounce max-w-[90vw]">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#023E8A] text-white px-5 py-3 rounded-2xl shadow-2xl border border-[#0077B6]/50 flex items-center gap-3 animate-bounce max-w-[90vw]">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse shrink-0" />
             <span className="text-xs sm:text-sm font-semibold">{liveAlert}</span>
             <button 
               onClick={dismissLiveAlert} 
@@ -195,14 +216,10 @@ function AppContent() {
       <Suspense fallback={<LoadingSpinner />}>
         {portal === 'hospital' || role === 'hospital' || role === 'admin' ? (
           <AdminPanel />
-        ) : portal === 'ambulance' || role === 'ambulance' || role === 'driver' ? (
-          <AmbulanceDriverPanel />
         ) : (
           <PatientDashboard />
         )}
       </Suspense>
-
-      <RoleSwitcher />
 
       {/* Floating Live Realtime Alert Toast */}
       {liveAlert && (

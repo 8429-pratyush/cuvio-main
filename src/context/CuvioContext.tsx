@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Hospital, Doctor, BookingRequest, AmbulanceBooking, Prescription, User, Driver, UserRole, HospitalProfile, AmbulanceProfile, ChatMessage } from '../types';
+import { Hospital, Doctor, BookingRequest, AmbulanceBooking, Prescription, User, Driver, UserRole, HospitalProfile, AmbulanceProfile, ChatMessage, HospitalSubscription } from '../types';
 import { collection, doc, setDoc, onSnapshot, writeBatch, deleteDoc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -74,7 +74,13 @@ interface CuvioContextType {
     medicine: number;
     icu: number;
     other: number;
-  }) => void;
+  updateHospitalAmbulancePhone: (hospitalId: string, phone: string, hotline?: string) => Promise<void>;
+  payHospitalSubscription: (hospitalId: string, paymentData: {
+    paymentMethod: 'Credit Card' | 'Debit Card' | 'Net Banking';
+    cardLast4?: string;
+    bankName?: string;
+    cardholderName?: string;
+  }) => Promise<{ invoiceId: string; validUntil: string }>;
   registerHospital: (hospitalData: {
     id?: string;
     name: string;
@@ -129,6 +135,8 @@ const initialHospitals: Hospital[] = [
     currentQueueWait: 12,
     about: 'Apollo Hospitals Jubilee Hills is a 477-bed multi-specialty facility and is one of the region\'s most renowned medical centers. Known for its advanced technology and experienced medical staff, it provides a comprehensive range of healthcare services.',
     specialties: ['Cardiology', 'Orthopedics', 'Pediatrics', 'Neurology', 'ENT', 'Dermatology'],
+    ambulancePhone: '+91 40 2360 7777',
+    emergencyHotline: '1066',
     charges: {
       consultation: 800,
       ambulanceBasic: 1500,
@@ -156,6 +164,8 @@ const initialHospitals: Hospital[] = [
     currentQueueWait: 4,
     about: 'Manipal Hospital Bangalore is a premier multi-specialty healthcare facility offering world-class infrastructure and clinical expertise. The Heart Institute is renowned for advanced cardiac diagnostics and micro-surgical options.',
     specialties: ['Cardiology', 'Neurology', 'Gastroenterology', 'Orthopedics'],
+    ambulancePhone: '+91 80 2222 1111',
+    emergencyHotline: '080-25023259',
     charges: {
       consultation: 1200,
       ambulanceBasic: 1800,
@@ -183,6 +193,8 @@ const initialHospitals: Hospital[] = [
     currentQueueWait: 28,
     about: 'Fortis Hospital on Bannerghatta Road is a 276-bed multi-specialty hospital. It is known for its highly skilled team of orthopedic surgeons, pediatricians, and general medicine professionals dedicated to evidence-based outcomes.',
     specialties: ['Orthopedics', 'Pediatrics', 'ENT', 'Gastroenterology'],
+    ambulancePhone: '+91 80 6621 4444',
+    emergencyHotline: '105711',
     charges: {
       consultation: 650,
       ambulanceBasic: 1200,
@@ -210,6 +222,8 @@ const initialHospitals: Hospital[] = [
     currentQueueWait: 20,
     about: 'Max Super Speciality Hospital Saket is one of the leading names in healthcare in Northern India. With state-of-the-art diagnostic machines and a dedicated emergency support network, Max offers unparalleled patient care.',
     specialties: ['Cardiology', 'Neurology', 'Orthopedics', 'Dermatology', 'Ophthalmology'],
+    ambulancePhone: '+91 11 2651 5050',
+    emergencyHotline: '011-40554055',
     charges: {
       consultation: 950,
       ambulanceBasic: 1600,
@@ -237,6 +251,8 @@ const initialHospitals: Hospital[] = [
     currentQueueWait: 15,
     about: 'Medanta - The Medicity is one of India\'s largest multi-super specialty medical institutes located in Gurugram. Founded by eminent cardiac surgeon Dr. Naresh Trehan, the institution is recognized for bringing advanced surgical capabilities and affordable transparent care.',
     specialties: ['Cardiology', 'Neurology', 'Orthopedics', 'ENT', 'Gastroenterology', 'Pediatrics'],
+    ambulancePhone: '+91 124 4141 414',
+    emergencyHotline: '1068',
     charges: {
       consultation: 1000,
       ambulanceBasic: 1700,
@@ -1647,6 +1663,88 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
   };
 
+  const updateHospitalAmbulancePhone = async (hospitalId: string, phone: string, hotline?: string) => {
+    const cleanPhone = phone.trim();
+    const cleanHotline = hotline ? hotline.trim() : undefined;
+
+    setHospitals(prev => {
+      const updatedList = prev.map(h => {
+        if (h.id.toLowerCase() === hospitalId.toLowerCase()) {
+          return {
+            ...h,
+            ambulancePhone: cleanPhone,
+            emergencyHotline: cleanHotline || h.emergencyHotline
+          };
+        }
+        return h;
+      });
+      localStorage.setItem('cuvio_hospitals', JSON.stringify(updatedList));
+      return updatedList;
+    });
+
+    const targetHosp = hospitals.find(h => h.id.toLowerCase() === hospitalId.toLowerCase());
+    const hospName = targetHosp?.name || hospitalId;
+    setLiveAlert(`🚑 Hospital Ambulance Department contact updated for ${hospName}: ${cleanPhone}`);
+
+    try {
+      await setDoc(doc(db, 'hospitals', hospitalId), {
+        ambulancePhone: cleanPhone,
+        ...(cleanHotline ? { emergencyHotline: cleanHotline } : {})
+      }, { merge: true });
+  const payHospitalSubscription = async (hospitalId: string, paymentData: {
+    paymentMethod: 'Credit Card' | 'Debit Card' | 'Net Banking';
+    cardLast4?: string;
+    bankName?: string;
+    cardholderName?: string;
+  }) => {
+    const now = new Date();
+    const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const invoiceId = `INV-CUVIO-${now.getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const newSub: HospitalSubscription = {
+      status: 'active',
+      planName: 'Monthly Hospital Enterprise Operating License',
+      monthlyFee: 1000,
+      paymentMethod: paymentData.paymentMethod,
+      cardLast4: paymentData.cardLast4 || '4242',
+      bankName: paymentData.bankName,
+      activatedAt: now.toISOString(),
+      validUntil: expiry.toISOString(),
+      invoiceId
+    };
+
+    setHospitals(prev => {
+      const updatedList = prev.map(h => {
+        if (h.id.toLowerCase() === hospitalId.toLowerCase()) {
+          return {
+            ...h,
+            subscription: newSub
+          };
+        }
+        return h;
+      });
+      localStorage.setItem('cuvio_hospitals', JSON.stringify(updatedList));
+      return updatedList;
+    });
+
+    const targetHosp = hospitals.find(h => h.id.toLowerCase() === hospitalId.toLowerCase());
+    const hospName = targetHosp?.name || hospitalId;
+    setLiveAlert(`💳 ₹1,000 Subscription Payment Confirmed for ${hospName}! License active for 30 days.`);
+
+    try {
+      await setDoc(doc(db, 'hospitals', hospitalId), {
+        subscription: newSub
+      }, { merge: true });
+    } catch (err: any) {
+      console.warn("Firestore payHospitalSubscription warning:", err);
+    }
+
+    return { 
+      invoiceId, 
+      validUntil: expiry.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) 
+    };
+  };
+
   const registerHospital = async (hospitalData: {
     id?: string;
     name: string;
@@ -1889,6 +1987,8 @@ export const CuvioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       requestAmbulance,
       updateAmbulanceStatus,
       updateHospitalCharges,
+      updateHospitalAmbulancePhone,
+      payHospitalSubscription,
       registerHospital,
       issuePrescription,
       addDoctor,
